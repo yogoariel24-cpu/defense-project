@@ -1,0 +1,503 @@
+{
+	"info": {
+		"_postman_id": "vigilis-intelligent-house-api",
+		"name": "Vigilis Intelligent House System API",
+		"description": "Comprehensive Postman collection for testing all REST endpoints of the Vigilis backend.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5000/api",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. System Health",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/health",
+							"host": ["{{baseUrl}}"],
+							"path": ["health"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Authentication",
+			"item": [
+				{
+					"name": "Login as Admin",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.success && jsonData.data && jsonData.data.token) {",
+									"    pm.collectionVariables.set('token', jsonData.data.token);",
+									"    console.log('Saved token to collection variable');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@vigilis.com\",\n    \"password\": \"admin123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "login"]
+						}
+					}
+				},
+				{
+					"name": "Register Homeowner & House",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.success && jsonData.data && jsonData.data.token) {",
+									"    pm.collectionVariables.set('token', jsonData.data.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"first_name\": \"Alexander\",\n    \"last_name\": \"Vance\",\n    \"email\": \"vance@vigilis.com\",\n    \"password\": \"password123\",\n    \"phone_number\": \"+1-555-019-2831\",\n    \"house_name\": \"Vance Manor\",\n    \"address\": \"742 Evergreen Terrace\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/register-homeowner",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "register-homeowner"]
+						}
+					}
+				},
+				{
+					"name": "Get Current User Profile",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/auth/me",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "me"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "3. Platform Administration",
+			"item": [
+				{
+					"name": "Get Platform Statistics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/stats",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "stats"]
+						}
+					}
+				},
+				{
+					"name": "Get All Homeowners",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/homeowners",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "homeowners"]
+						}
+					}
+				},
+				{
+					"name": "Admin Provision Homeowner & House",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"first_name\": \"Claire\",\n    \"last_name\": \"Sterling\",\n    \"email\": \"claire@vigilis.com\",\n    \"password\": \"password123\",\n    \"phone_number\": \"+1-555-019-4455\",\n    \"house_name\": \"Sterling Modern Residence\",\n    \"address\": \"108 Ocean Boulevard\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/homeowners",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "homeowners"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "4. House Management",
+			"item": [
+				{
+					"name": "Get House Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/houses",
+							"host": ["{{baseUrl}}"],
+							"path": ["houses"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "5. Smart Lighting",
+			"item": [
+				{
+					"name": "Get Lighting Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/lighting",
+							"host": ["{{baseUrl}}"],
+							"path": ["lighting"]
+						}
+					}
+				},
+				{
+					"name": "Set Lighting Mode (AUTO / MANUAL)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"mode\": \"MANUAL\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/lighting/mode",
+							"host": ["{{baseUrl}}"],
+							"path": ["lighting", "mode"]
+						}
+					}
+				},
+				{
+					"name": "Set Brightness (0 - 100%)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"brightness_percentage\": 85\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/lighting/brightness",
+							"host": ["{{baseUrl}}"],
+							"path": ["lighting", "brightness"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "6. Security & AI Threat Engine",
+			"item": [
+				{
+					"name": "Get Security Status & Events",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/security",
+							"host": ["{{baseUrl}}"],
+							"path": ["security"]
+						}
+					}
+				},
+				{
+					"name": "Arm / Disarm Security State",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"ARMED_AWAY\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/security/state",
+							"host": ["{{baseUrl}}"],
+							"path": ["security", "state"]
+						}
+					}
+				},
+				{
+					"name": "Send Telemetry / Camera Motion Capture (AI Intake)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"event_type\": \"MOTION_DETECTED\",\n    \"has_person\": true,\n    \"person_confidence\": 0.97,\n    \"has_face\": true,\n    \"face_confidence\": 0.92\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/security/telemetry/capture",
+							"host": ["{{baseUrl}}"],
+							"path": ["security", "telemetry", "capture"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "7. Emergency System",
+			"item": [
+				{
+					"name": "Trigger Emergency Panic Button",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"notes\": \"Manual panic button test trigger from Postman.\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/emergency/trigger",
+							"host": ["{{baseUrl}}"],
+							"path": ["emergency", "trigger"]
+						}
+					}
+				},
+				{
+					"name": "Get Emergency History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/emergency/history",
+							"host": ["{{baseUrl}}"],
+							"path": ["emergency", "history"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "8. Devices Management",
+			"item": [
+				{
+					"name": "Get Connected Devices",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/devices",
+							"host": ["{{baseUrl}}"],
+							"path": ["devices"]
+						}
+					}
+				},
+				{
+					"name": "Register New IoT Device",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Garden Entrance Cam\",\n    \"device_identifier\": \"CAM_GARDEN_01\",\n    \"type\": \"ESP32_CAM\",\n    \"ip_address\": \"192.168.1.150\",\n    \"specific_config\": {\n        \"location_name\": \"Garden Perimeter\",\n        \"stream_url\": \"http://192.168.1.150:81/stream\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/devices",
+							"host": ["{{baseUrl}}"],
+							"path": ["devices"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "9. Residents Management",
+			"item": [
+				{
+					"name": "Get House Residents",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/residents",
+							"host": ["{{baseUrl}}"],
+							"path": ["residents"]
+						}
+					}
+				},
+				{
+					"name": "Add Sub-Resident",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"first_name\": \"David\",\n    \"last_name\": \"Vance\",\n    \"email\": \"david.vance@vigilis.com\",\n    \"password\": \"password123\",\n    \"relationship_to_owner\": \"Son\",\n    \"permissions\": {\n        \"can_control_lights\": true,\n        \"can_view_cameras\": true,\n        \"can_arm_security\": true,\n        \"can_trigger_emergency\": true\n    }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/residents",
+							"host": ["{{baseUrl}}"],
+							"path": ["residents"]
+						}
+					}
+				}
+			]
+		}
+	]
+}
