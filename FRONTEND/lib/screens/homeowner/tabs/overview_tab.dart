@@ -108,7 +108,7 @@ class OverviewTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '${house.address} • Tenant ID: ${house.id}',
+                  '${house.address} • GPS: ${house.latitude.toStringAsFixed(4)}, ${house.longitude.toStringAsFixed(4)} • Police: ${house.emergencyContactPolice}',
                   style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
                 ),
                 const Divider(height: 32, color: Colors.white10),

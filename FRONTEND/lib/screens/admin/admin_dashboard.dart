@@ -23,6 +23,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   };
   bool _isLoading = true;
   String _searchQuery = '';
+  bool _filterPendingOnly = false;
 
   @override
   void initState() {
@@ -45,6 +46,56 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
 
     setState(() => _isLoading = false);
+  }
+
+  Future<void> _handlePaymentApproval(String userId, String action, {String? reason}) async {
+    final api = Provider.of<ApiService>(context, listen: false);
+    final res = await api.validateAdminPayment(userId, action, rejectionReason: reason);
+
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(action == 'APPROVE' ? 'Payment validated! Account activated and unlocked.' : 'Payment marked as rejected.'),
+          backgroundColor: action == 'APPROVE' ? AppTheme.statusSafe : AppTheme.statusDanger,
+        ),
+      );
+      _fetchAdminData();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(res['message'] ?? 'Action failed'), backgroundColor: AppTheme.statusDanger),
+      );
+    }
+  }
+
+  void _showRejectDialog(String userId, String name) {
+    final reasonCtrl = TextEditingController(text: 'Transaction reference could not be verified.');
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: AppTheme.primaryCard,
+        title: Text('Reject Payment for $name', style: const TextStyle(color: Colors.white, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('State the reason for rejecting this transaction:', style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+            const SizedBox(height: 12),
+            TextField(controller: reasonCtrl, decoration: const InputDecoration(labelText: 'Rejection Reason')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.statusDanger),
+            onPressed: () {
+              Navigator.pop(c);
+              _handlePaymentApproval(userId, 'REJECT', reason: reasonCtrl.text.trim());
+            },
+            child: const Text('Reject Payment'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showProvisionDialog() {
@@ -86,7 +137,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 const SizedBox(height: 12),
                 TextField(controller: emailCtrl, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email Address *', prefixIcon: Icon(Icons.email_outlined))),
                 const SizedBox(height: 12),
-                TextField(controller: passCtrl, obscureText: true, decoration: const InputDecoration(labelText: 'Initial Password *', prefixIcon: Icon(Icons.lock_outline))),
+                TextField(controller: passCtrl, obscureText: true, decoration: const InputDecoration(labelText: 'Initial Password (min 8 chars) *', prefixIcon: Icon(Icons.lock_outline))),
                 const SizedBox(height: 12),
                 TextField(controller: houseNameCtrl, decoration: const InputDecoration(labelText: 'House Name (e.g. Hilltop Villa)', prefixIcon: Icon(Icons.home_outlined))),
                 const SizedBox(height: 12),
@@ -106,6 +157,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           if (firstNameCtrl.text.trim().isEmpty || lastNameCtrl.text.trim().isEmpty || emailCtrl.text.trim().isEmpty || passCtrl.text.trim().isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('Please fill all mandatory fields'), backgroundColor: AppTheme.statusWarning),
+                            );
+                            return;
+                          }
+
+                          if (passCtrl.text.trim().length < 8) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Password must be at least 8 digits/characters long'), backgroundColor: AppTheme.statusDanger),
                             );
                             return;
                           }
@@ -288,6 +346,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final filteredHomeowners = _homeowners.where((h) {
       final user = h['user'] ?? {};
       final house = h['house'] ?? {};
+      final paymentStatus = h['payment_status'] ?? 'PENDING';
+
+      if (_filterPendingOnly && paymentStatus == 'APPROVED') {
+        return false;
+      }
+
       final query = _searchQuery.toLowerCase();
       final fullName = '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'.toLowerCase();
       final email = (user['email'] ?? '').toLowerCase();
@@ -295,6 +359,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final houseName = (house['name'] ?? '').toLowerCase();
       return fullName.contains(query) || email.contains(query) || houseId.contains(query) || houseName.contains(query);
     }).toList();
+
+    final pendingCount = _homeowners.where((h) => h['payment_status'] == 'SUBMITTED' || h['payment_status'] == 'PENDING').length;
 
     return Scaffold(
       appBar: AppBar(
@@ -338,28 +404,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               children: [
                                 const Text('TOTAL HOUSES', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
                                 const SizedBox(height: 8),
-                                Text('${_stats['totalHouses'] ?? _homeowners.length}', style: const TextStyle(color: AppTheme.accentCyan, fontSize: 28, fontWeight: FontWeight.w900)),
+                                Text('${_stats['totalHouses'] ?? _homeowners.length}', style: const TextStyle(color: AppTheme.accentCyan, fontSize: 26, fontWeight: FontWeight.w900)),
                               ],
                             ),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: GlassCard(
+                            borderColor: pendingCount > 0 ? Colors.amber.withOpacity(0.5) : null,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('ACTIVE USERS', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
+                                const Text('PAYMENT REVIEW', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
                                 const SizedBox(height: 8),
                                 Text(
-                                  '${_stats['totalUsers'] ?? _homeowners.length}',
-                                  style: const TextStyle(color: AppTheme.statusSafe, fontSize: 28, fontWeight: FontWeight.w900),
+                                  '$pendingCount Pending',
+                                  style: TextStyle(color: pendingCount > 0 ? Colors.amber : AppTheme.statusSafe, fontSize: 16, fontWeight: FontWeight.w900),
                                 ),
                               ],
                             ),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: GlassCard(
                             child: Column(
@@ -371,7 +438,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   '${_stats['activeAlarms'] ?? 0}',
                                   style: TextStyle(
                                     color: (_stats['activeAlarms'] ?? 0) > 0 ? AppTheme.statusDanger : AppTheme.statusSafe,
-                                    fontSize: 28,
+                                    fontSize: 26,
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
@@ -381,7 +448,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 24),
+
+                    // Filter Tabs
+                    Row(
+                      children: [
+                        _buildFilterButton('All Homeowners (${_homeowners.length})', !_filterPendingOnly, () => setState(() => _filterPendingOnly = false)),
+                        const SizedBox(width: 8),
+                        _buildFilterButton('Needs Validation ($pendingCount)', _filterPendingOnly, () => setState(() => _filterPendingOnly = true), isAlert: pendingCount > 0),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
 
                     // Search & Action Header
                     Row(
@@ -420,8 +497,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               children: [
                                 Icon(Icons.people_outline, color: AppTheme.textMuted, size: 36),
                                 SizedBox(height: 10),
-                                Text('No homeowner accounts matching query.', style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700)),
-                                Text('Tap "Provision House" above to create an account.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                                Text('No homeowner accounts found in this view.', style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700)),
+                                Text('Try switching filter tabs or provisioning a new house.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
                               ],
                             ),
                           ),
@@ -446,26 +523,111 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           final residents = house['residents'] as List? ?? [];
                           final devices = house['devices'] as List? ?? [];
 
+                          final paymentStatus = h['payment_status'] ?? 'PENDING';
+                          final isPaid = paymentStatus == 'APPROVED';
+                          final paymentPlan = h['subscription_plan'] ?? 'STANDARD';
+                          final paymentRef = h['payment_reference'] ?? 'None';
+                          final paymentMethod = h['payment_method'] ?? 'N/A';
+
+                          Color payColor = AppTheme.statusWarning;
+                          if (paymentStatus == 'APPROVED') payColor = AppTheme.statusSafe;
+                          if (paymentStatus == 'SUBMITTED') payColor = AppTheme.accentCyan;
+                          if (paymentStatus == 'REJECTED') payColor = AppTheme.statusDanger;
+
                           return GlassCard(
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                            child: Row(
+                            padding: const EdgeInsets.all(16),
+                            borderColor: !isPaid ? payColor.withOpacity(0.5) : null,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                CircleAvatar(
-                                  backgroundColor: AppTheme.accentBlue.withOpacity(0.2),
-                                  child: Text(
-                                    fullName.isNotEmpty ? fullName[0].toUpperCase() : 'H',
-                                    style: const TextStyle(color: AppTheme.accentCyan, fontWeight: FontWeight.bold),
-                                  ),
+                                Row(
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: AppTheme.accentBlue.withOpacity(0.2),
+                                      child: Text(
+                                        fullName.isNotEmpty ? fullName[0].toUpperCase() : 'H',
+                                        style: const TextStyle(color: AppTheme.accentCyan, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(fullName.isNotEmpty ? fullName : 'Homeowner', style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700, fontSize: 15)),
+                                          const SizedBox(height: 2),
+                                          Text('$email • $houseId ($houseName)', style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                                        ],
+                                      ),
+                                    ),
+                                    StatBadge(
+                                      label: 'PAYMENT: $paymentStatus',
+                                      color: payColor,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    PopupMenuButton<String>(
+                                      icon: const Icon(Icons.more_vert, color: AppTheme.textMuted),
+                                      color: AppTheme.primarySurface,
+                                      onSelected: (val) {
+                                        if (val == 'edit') {
+                                          _showEditDialog(h);
+                                        } else if (val == 'toggle') {
+                                          _toggleStatus(user['id'], status);
+                                        } else if (val == 'delete') {
+                                          _deleteUser(user['id'], fullName);
+                                        }
+                                      },
+                                      itemBuilder: (ctx) => [
+                                        const PopupMenuItem(
+                                          value: 'edit',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.edit_outlined, size: 18, color: AppTheme.accentCyan),
+                                              SizedBox(width: 8),
+                                              Text('Edit Details'),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'toggle',
+                                          child: Row(
+                                            children: [
+                                              Icon(isActive ? Icons.block_flipped : Icons.check_circle_outline, size: 18, color: isActive ? AppTheme.statusDanger : AppTheme.statusSafe),
+                                              SizedBox(width: 8),
+                                              Text(isActive ? 'Suspend Account' : 'Activate Account', style: TextStyle(color: isActive ? AppTheme.statusDanger : AppTheme.statusSafe)),
+                                            ],
+                                          ),
+                                        ),
+                                        const PopupMenuItem(
+                                          value: 'delete',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.delete_outline, size: 18, color: AppTheme.statusDanger),
+                                              SizedBox(width: 8),
+                                              Text('Delete Account', style: TextStyle(color: AppTheme.statusDanger)),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                const SizedBox(height: 10),
+
+                                // Payment Info Box
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primarySurface,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(fullName.isNotEmpty ? fullName : 'Homeowner', style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700, fontSize: 15)),
-                                      const SizedBox(height: 2),
-                                      Text('$email • $houseId ($houseName)', style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Plan: $paymentPlan • Ref: $paymentRef ($paymentMethod)',
+                                        style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                                      ),
                                       Text(
                                         '${residents.length} Residents • ${devices.length} Devices',
                                         style: const TextStyle(color: AppTheme.textDim, fontSize: 11),
@@ -473,63 +635,37 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                     ],
                                   ),
                                 ),
-                                StatBadge(
-                                  label: status,
-                                  color: isActive ? AppTheme.statusSafe : AppTheme.statusDanger,
-                                ),
-                                const SizedBox(width: 8),
-                                PopupMenuButton<String>(
-                                  icon: const Icon(Icons.more_vert, color: AppTheme.textMuted),
-                                  color: AppTheme.primarySurface,
-                                  onSelected: (val) {
-                                    if (val == 'edit') {
-                                      _showEditDialog(h);
-                                    } else if (val == 'toggle') {
-                                      _toggleStatus(user['id'], status);
-                                    } else if (val == 'delete') {
-                                      _deleteUser(user['id'], fullName);
-                                    }
-                                  },
-                                  itemBuilder: (ctx) => [
-                                    const PopupMenuItem(
-                                      value: 'edit',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.edit_outlined, size: 18, color: AppTheme.accentCyan),
-                                          SizedBox(width: 8),
-                                          Text('Edit Details'),
-                                        ],
-                                      ),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'toggle',
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            isActive ? Icons.block_flipped : Icons.check_circle_outline,
-                                            size: 18,
-                                            color: isActive ? AppTheme.statusDanger : AppTheme.statusSafe,
+
+                                // Admin Validation Action Buttons
+                                if (!isPaid) ...[
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: ElevatedButton.icon(
+                                          icon: const Icon(Icons.check_circle_rounded, size: 16),
+                                          label: const Text('Validate & Activate Payment'),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: AppTheme.statusSafe,
+                                            foregroundColor: Colors.black,
+                                            padding: const EdgeInsets.symmetric(vertical: 8),
                                           ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            isActive ? 'Suspend Account' : 'Activate Account',
-                                            style: TextStyle(color: isActive ? AppTheme.statusDanger : AppTheme.statusSafe),
-                                          ),
-                                        ],
+                                          onPressed: () => _handlePaymentApproval(user['id'], 'APPROVE'),
+                                        ),
                                       ),
-                                    ),
-                                    const PopupMenuItem(
-                                      value: 'delete',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.delete_outline, size: 18, color: AppTheme.statusDanger),
-                                          SizedBox(width: 8),
-                                          Text('Delete Account', style: TextStyle(color: AppTheme.statusDanger)),
-                                        ],
+                                      const SizedBox(width: 8),
+                                      OutlinedButton.icon(
+                                        icon: const Icon(Icons.cancel_outlined, size: 16, color: AppTheme.statusDanger),
+                                        label: const Text('Reject', style: TextStyle(color: AppTheme.statusDanger)),
+                                        style: OutlinedButton.styleFrom(
+                                          side: const BorderSide(color: AppTheme.statusDanger),
+                                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                        ),
+                                        onPressed: () => _showRejectDialog(user['id'], fullName),
                                       ),
-                                    ),
-                                  ],
-                                ),
+                                    ],
+                                  ),
+                                ],
                               ],
                             ),
                           );
@@ -539,6 +675,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildFilterButton(String label, bool isSelected, VoidCallback onTap, {bool isAlert = false}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.accentBlue : AppTheme.primarySurface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isAlert ? Colors.amber : (isSelected ? AppTheme.accentBlue : Colors.white10),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : (isAlert ? Colors.amber : AppTheme.textMuted),
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
+          ),
+        ),
+      ),
     );
   }
 }

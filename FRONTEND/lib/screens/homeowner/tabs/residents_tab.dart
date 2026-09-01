@@ -70,6 +70,13 @@ class ResidentsTab extends StatelessWidget {
                             return;
                           }
 
+                          if (passCtrl.text.trim().length < 8) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Password must be at least 8 digits/characters long'), backgroundColor: AppTheme.statusDanger),
+                            );
+                            return;
+                          }
+
                           final success = await houseProvider.addResident({
                             'first_name': firstNameCtrl.text.trim(),
                             'last_name': lastNameCtrl.text.trim(),

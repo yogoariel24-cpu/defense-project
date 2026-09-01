@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_provider.dart';
 import '../../services/house_provider.dart';
-import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
+import 'payment_screen.dart';
 import 'tabs/overview_tab.dart';
 import 'tabs/lighting_tab.dart';
 import 'tabs/security_tab.dart';
@@ -19,6 +19,7 @@ class HomeownerDashboard extends StatefulWidget {
 
 class _HomeownerDashboardState extends State<HomeownerDashboard> {
   int _selectedIndex = 0;
+  bool _forceUnlocked = false;
 
   final List<({String label, IconData icon, IconData activeIcon})> _tabs = [
     (label: 'Overview', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard_rounded),
@@ -32,6 +33,15 @@ class _HomeownerDashboardState extends State<HomeownerDashboard> {
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
     final user = auth.currentUser!;
+
+    // If payment is not yet validated by the admin, gate access behind PaymentScreen
+    if (!user.isPaymentApproved && !_forceUnlocked) {
+      return PaymentScreen(
+        onPaymentApproved: () {
+          setState(() => _forceUnlocked = true);
+        },
+      );
+    }
 
     return ChangeNotifierProvider(
       create: (_) => HouseProvider(auth.apiService),
@@ -48,7 +58,7 @@ class _HomeownerDashboardState extends State<HomeownerDashboard> {
                 ),
                 child: Center(
                   child: Text(
-                    user.firstName[0],
+                    user.firstName.isNotEmpty ? user.firstName[0] : 'H',
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                 ),
@@ -67,7 +77,7 @@ class _HomeownerDashboardState extends State<HomeownerDashboard> {
             IconButton(
               icon: const Icon(Icons.notifications_none_rounded, color: AppTheme.textLight),
               onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Notification center opened')),
+                const SnackBar(content: Text('Notification center: All systems operational.')),
               ),
             ),
             IconButton(

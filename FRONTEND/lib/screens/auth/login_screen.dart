@@ -14,11 +14,11 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   bool _isSignUpMode = false;
 
-  // Unified Sign In Controllers (used by Admin, Homeowner, and Resident)
+  // Sign In Controllers
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  // Create Account Controllers (Homeowner & House Onboarding)
+  // Create Account Controllers
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
   final _regEmailController = TextEditingController();
@@ -28,6 +28,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _addressController = TextEditingController();
 
   bool _obscurePassword = true;
+  String? _passwordError;
+  String? _emailError;
 
   @override
   void dispose() {
@@ -41,6 +43,18 @@ class _LoginScreenState extends State<LoginScreen> {
     _houseNameController.dispose();
     _addressController.dispose();
     super.dispose();
+  }
+
+  void _validateRegPassword(String val) {
+    setState(() {
+      if (val.isEmpty) {
+        _passwordError = 'Password is required';
+      } else if (val.length < 8) {
+        _passwordError = 'Password must be at least 8 digits/characters';
+      } else {
+        _passwordError = null;
+      }
+    });
   }
 
   void _submitLogin() async {
@@ -71,23 +85,40 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _submitSignUp() async {
     final auth = Provider.of<AuthProvider>(context, listen: false);
+    final pass = _regPasswordController.text;
+    final email = _regEmailController.text.trim();
 
-    if (_firstNameController.text.trim().isEmpty ||
-        _lastNameController.text.trim().isEmpty ||
-        _regEmailController.text.trim().isEmpty ||
-        _regPasswordController.text.trim().isEmpty) {
+    bool hasError = false;
+
+    if (pass.length < 8) {
+      setState(() => _passwordError = 'Password must be at least 8 digits/characters');
+      hasError = true;
+    } else {
+      setState(() => _passwordError = null);
+    }
+
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
+      setState(() => _emailError = 'Please enter a valid email address');
+      hasError = true;
+    } else {
+      setState(() => _emailError = null);
+    }
+
+    if (_firstNameController.text.trim().isEmpty || _lastNameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please fill all mandatory fields (First Name, Last Name, Email, Password).'),
+          content: Text('Please enter your First and Last Name.'),
           backgroundColor: AppTheme.statusWarning,
         ),
       );
       return;
     }
 
+    if (hasError) return;
+
     final success = await auth.registerHomeowner(
-      email: _regEmailController.text.trim(),
-      password: _regPasswordController.text.trim(),
+      email: email,
+      password: pass,
       firstName: _firstNameController.text.trim(),
       lastName: _lastNameController.text.trim(),
       phoneNumber: _phoneController.text.trim(),
@@ -177,7 +208,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 28),
 
-                  // Standard 2-Way Toggle: Sign In / Create Account
+                  // 2-Way Switch: Sign In / Create Account
                   Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
@@ -345,15 +376,36 @@ class _LoginScreenState extends State<LoginScreen> {
         TextField(
           controller: _regEmailController,
           keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(labelText: 'Email Address *', prefixIcon: Icon(Icons.email_outlined)),
+          onChanged: (v) {
+            if (_emailError != null) {
+              setState(() => _emailError = null);
+            }
+          },
+          decoration: InputDecoration(
+            labelText: 'Email Address *',
+            prefixIcon: const Icon(Icons.email_outlined),
+            errorText: _emailError,
+            errorStyle: const TextStyle(color: AppTheme.statusDanger, fontWeight: FontWeight.bold),
+          ),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _regPasswordController,
           obscureText: _obscurePassword,
+          onChanged: _validateRegPassword,
           decoration: InputDecoration(
-            labelText: 'Password *',
+            labelText: 'Password (min 8 characters) *',
             prefixIcon: const Icon(Icons.lock_outline),
+            errorText: _passwordError,
+            errorStyle: const TextStyle(color: AppTheme.statusDanger, fontWeight: FontWeight.bold),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppTheme.statusDanger, width: 2),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppTheme.statusDanger, width: 1.5),
+            ),
             suffixIcon: IconButton(
               icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: AppTheme.textDim),
               onPressed: () => setState(() => _obscurePassword = !_obscurePassword),

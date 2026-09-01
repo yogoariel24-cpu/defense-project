@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/house_model.dart';
 import '../models/device_model.dart';
 import '../models/security_event_model.dart';
@@ -139,6 +140,13 @@ class HouseProvider extends ChangeNotifier {
   }
 
   Future<bool> triggerEmergency({String notes = 'Manual App Trigger'}) async {
+    // Buzz device with haptic alarm feedback
+    try {
+      HapticFeedback.heavyImpact();
+      Future.delayed(const Duration(milliseconds: 250), () => HapticFeedback.heavyImpact());
+      Future.delayed(const Duration(milliseconds: 500), () => HapticFeedback.vibrate());
+    } catch (_) {}
+
     if (_house != null) {
       _house = _house!.copyWith(securityStatus: 'ALARM_TRIGGERED');
       notifyListeners();

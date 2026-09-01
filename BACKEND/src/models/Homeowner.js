@@ -24,6 +24,34 @@ const Homeowner = sequelize.define('homeowners', {
     type: DataTypes.STRING,
     defaultValue: 'en',
   },
+  subscription_plan: {
+    type: DataTypes.STRING,
+    defaultValue: 'STANDARD',
+  },
+  payment_status: {
+    type: DataTypes.ENUM('PENDING', 'SUBMITTED', 'APPROVED', 'REJECTED'),
+    defaultValue: 'PENDING',
+  },
+  payment_method: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  payment_reference: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  payment_amount: {
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 49.99,
+  },
+  payment_date: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  rejection_reason: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
 });
 
 module.exports = Homeowner;

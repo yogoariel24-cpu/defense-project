@@ -360,4 +360,56 @@ class ApiService {
       return {'success': false, 'message': 'Failed to fetch platform statistics'};
     }
   }
+
+  // --- Payment Endpoints ---
+  Future<Map<String, dynamic>> submitPayment({
+    required String subscriptionPlan,
+    required String paymentMethod,
+    required String paymentReference,
+    double? paymentAmount,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/houses/payment/submit'),
+        headers: _headers,
+        body: jsonEncode({
+          'subscription_plan': subscriptionPlan,
+          'payment_method': paymentMethod,
+          'payment_reference': paymentReference,
+          'payment_amount': paymentAmount,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to submit payment transaction'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getPaymentStatus() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/houses/payment/status'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 6));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to load payment status'};
+    }
+  }
+
+  Future<Map<String, dynamic>> validateAdminPayment(String userId, String action, {String? rejectionReason}) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/admin/homeowners/$userId/payment'),
+        headers: _headers,
+        body: jsonEncode({
+          'action': action, // 'APPROVE' or 'REJECT'
+          if (rejectionReason != null) 'rejection_reason': rejectionReason,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to update payment validation status'};
+    }
+  }
 }

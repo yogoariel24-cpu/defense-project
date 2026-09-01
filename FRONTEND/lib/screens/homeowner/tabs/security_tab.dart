@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../services/house_provider.dart';
-import '../../../services/api_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/glass_card.dart';
 import '../../../widgets/stat_badge.dart';
@@ -15,6 +14,7 @@ class SecurityTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final houseProvider = Provider.of<HouseProvider>(context);
     final events = houseProvider.securityEvents;
+    final isArmed = houseProvider.house.isArmed;
 
     return RefreshIndicator(
       onRefresh: houseProvider.fetchSecurityEvents,
@@ -24,49 +24,51 @@ class SecurityTab extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Live AI Threat Intake Trigger
+            // Perimeter Status Banner
             GlassCard(
-              borderColor: AppTheme.accentCyan.withOpacity(0.4),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              borderColor: isArmed ? AppTheme.accentCyan.withOpacity(0.4) : AppTheme.statusSafe.withOpacity(0.4),
+              padding: const EdgeInsets.all(18),
               child: Row(
                 children: [
-                  const Icon(Icons.shield_outlined, color: AppTheme.accentCyan, size: 22),
-                  const SizedBox(width: 12),
-                  const Expanded(
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: (isArmed ? AppTheme.accentCyan : AppTheme.statusSafe).withOpacity(0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isArmed ? Icons.shield_rounded : Icons.shield_outlined,
+                      color: isArmed ? AppTheme.accentCyan : AppTheme.statusSafe,
+                      size: 26,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('AI Vision & Intrusion Radar', style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700, fontSize: 13)),
-                        Text('Processes motion, face match & threat matrix live', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                        Text(
+                          'Perimeter Security: ${houseProvider.house.securityStatus.replaceAll('_', ' ')}',
+                          style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w800, fontSize: 15),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isArmed ? 'AI Threat Detection and Motion Sensors Active' : 'System standby. Armed sensors ready.',
+                          style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                        ),
                       ],
                     ),
                   ),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.accentBlue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    ),
-                    onPressed: () async {
-                      // Trigger real backend telemetry ingestion
-                      final api = Provider.of<ApiService>(context, listen: false);
-                      await api.sendSecurityTelemetry({
-                        'event_type': 'MOTION_DETECTED',
-                        'has_person': true,
-                        'person_confidence': 0.96,
-                        'has_face': true,
-                        'face_confidence': 0.91,
-                      });
-                      await houseProvider.fetchSecurityEvents();
-                    },
-                    child: const Text('Test Trigger', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                  StatBadge(
+                    label: isArmed ? 'ARMED' : 'DISARMED',
+                    color: isArmed ? AppTheme.accentCyan : AppTheme.statusSafe,
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
 
-            // Event Feed Header
+            // Security Event Audit Log Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -174,13 +176,14 @@ class SecurityTab extends StatelessWidget {
             Text(event.description!, style: const TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.4)),
           if (event.aiAnalysis != null) ...[
             const SizedBox(height: 8),
-            Row(
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
               children: [
-                _aiChip('Person: ${(event.aiAnalysis!.personConfidence * 100).toStringAsFixed(0)}%', AppTheme.accentCyan),
-                const SizedBox(width: 8),
-                _aiChip('Face: ${event.aiAnalysis!.faceRecognitionResult}', AppTheme.accentBlue),
-                const SizedBox(width: 8),
-                _aiChip('Risk: ${event.aiAnalysis!.riskScore.toStringAsFixed(0)}%', threatColor),
+                _aiChip('Face: ${event.aiAnalysis!.faceRecognitionResult == 'UNKNOWN' ? '🚨 UNRECOGNIZED' : event.aiAnalysis!.faceRecognitionResult}', event.aiAnalysis!.faceRecognitionResult == 'UNKNOWN' ? AppTheme.statusDanger : AppTheme.statusSafe),
+                if (event.aiAnalysis!.personDetected)
+                  _aiChip('Human: ${(event.aiAnalysis!.personConfidence * 100).toStringAsFixed(0)}%', AppTheme.accentCyan),
+                _aiChip('Risk Score: ${event.aiAnalysis!.riskScore.toStringAsFixed(0)}%', threatColor),
               ],
             ),
           ],

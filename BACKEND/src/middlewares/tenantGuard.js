@@ -1,4 +1,4 @@
-const { Permission } = require('../models');
+const { Permission, Homeowner, House } = require('../models');
 
 /**
  * Ensures that the requester can only access resources belonging to their assigned house_id.
@@ -34,6 +34,37 @@ const tenantGuard = async (req, res, next) => {
 };
 
 /**
+ * Gating middleware: Requires the Homeowner payment status to be APPROVED by Platform Administrator
+ * before any IoT or security actions can be executed.
+ */
+const requirePaymentActive = async (req, res, next) => {
+  const user = req.user;
+  if (user.role === 'PLATFORM_ADMIN') return next();
+
+  let paymentStatus = 'PENDING';
+  if (user.role === 'HOMEOWNER') {
+    const homeowner = user.homeownerProfile || await Homeowner.findOne({ where: { user_id: user.id } });
+    paymentStatus = homeowner?.payment_status || 'PENDING';
+  } else if (user.role === 'RESIDENT') {
+    if (req.houseId) {
+      const house = await House.findByPk(req.houseId, { include: [{ model: Homeowner, as: 'homeowner' }] });
+      paymentStatus = house?.homeowner?.payment_status || 'PENDING';
+    }
+  }
+
+  if (paymentStatus !== 'APPROVED') {
+    return res.status(403).json({
+      success: false,
+      code: 'PAYMENT_REQUIRED',
+      message: 'Account locked. Subscription payment required and must be validated by Administrator before accessing house controls.',
+      payment_status: paymentStatus,
+    });
+  }
+
+  next();
+};
+
+/**
  * Checks granular permissions for Residents.
  * @param {string} permissionKey - e.g. 'can_control_lights', 'can_arm_security', etc.
  */
@@ -64,4 +95,4 @@ const checkResidentPermission = (permissionKey) => {
   };
 };
 
-module.exports = { tenantGuard, checkResidentPermission };
+module.exports = { tenantGuard, requirePaymentActive, checkResidentPermission };

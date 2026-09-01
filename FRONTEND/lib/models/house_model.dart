@@ -2,6 +2,8 @@ class HouseModel {
   final String id;
   final String name;
   final String address;
+  final double latitude;
+  final double longitude;
   final String securityStatus; // DISARMED, ARMED_AWAY, ARMED_HOME, ALARM_TRIGGERED
   final String lightMode; // AUTO, MANUAL
   final int globalBrightness;
@@ -13,6 +15,8 @@ class HouseModel {
     required this.id,
     required this.name,
     required this.address,
+    this.latitude = 37.774929,
+    this.longitude = -122.419416,
     required this.securityStatus,
     required this.lightMode,
     required this.globalBrightness,
@@ -21,6 +25,7 @@ class HouseModel {
     this.lastSecurityChangeAt,
   });
 
+  String get googleMapsUrl => 'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
   bool get isArmed => securityStatus == 'ARMED_AWAY' || securityStatus == 'ARMED_HOME';
   bool get isAlarmTriggered => securityStatus == 'ALARM_TRIGGERED';
 
@@ -29,6 +34,8 @@ class HouseModel {
       id: json['id'] ?? 'HOUSE_001',
       name: json['name'] ?? 'Smart House',
       address: json['address'] ?? '',
+      latitude: (json['latitude'] != null ? double.tryParse(json['latitude'].toString()) : null) ?? 37.774929,
+      longitude: (json['longitude'] != null ? double.tryParse(json['longitude'].toString()) : null) ?? -122.419416,
       securityStatus: json['security_status'] ?? json['securityStatus'] ?? 'DISARMED',
       lightMode: json['light_mode'] ?? json['lightMode'] ?? 'AUTO',
       globalBrightness: json['global_brightness'] ?? json['globalBrightness'] ?? 75,
@@ -46,11 +53,15 @@ class HouseModel {
     int? globalBrightness,
     String? name,
     String? address,
+    double? latitude,
+    double? longitude,
   }) {
     return HouseModel(
       id: id,
       name: name ?? this.name,
       address: address ?? this.address,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
       securityStatus: securityStatus ?? this.securityStatus,
       lightMode: lightMode ?? this.lightMode,
       globalBrightness: globalBrightness ?? this.globalBrightness,

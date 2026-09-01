@@ -40,7 +40,7 @@ class EmergencyDialog extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             const Text(
-              'CONFIRM EMERGENCY DISPATCH',
+              'CONFIRM POLICE DISPATCH',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: AppTheme.statusDanger,
@@ -51,7 +51,7 @@ class EmergencyDialog extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             const Text(
-              'Triggering this emergency alert will immediately notify local police services, on-call security agents, and broadcast critical sirens to all house residents.',
+              'Triggering this emergency alert will call local police (911), transmit your exact Google Maps GPS location, record in the activity log, and sound sirens for all house residents.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.4),
             ),
@@ -79,7 +79,7 @@ class EmergencyDialog extends StatelessWidget {
                       Navigator.pop(context, true);
                       onConfirm();
                     },
-                    child: const Text('DISPATCH NOW'),
+                    child: const Text('CALL POLICE (911)'),
                   ),
                 ),
               ],

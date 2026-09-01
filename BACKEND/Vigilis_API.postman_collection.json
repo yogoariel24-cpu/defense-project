@@ -1,8 +1,8 @@
 {
 	"info": {
-		"_postman_id": "vigilis-intelligent-house-api",
-		"name": "Vigilis Intelligent House System API",
-		"description": "Comprehensive Postman collection for testing all REST endpoints of the Vigilis backend.",
+		"_postman_id": "vigilis-intelligent-house-api-v2",
+		"name": "Vigilis Intelligent House System API (Complete)",
+		"description": "Comprehensive Postman collection for testing all REST endpoints including Auth, Payments, Platform Admin, Smart Lighting, AI Security, Emergency System, Devices, and Residents.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
@@ -13,6 +13,11 @@
 		},
 		{
 			"key": "token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "homeownerUserId",
 			"value": "",
 			"type": "string"
 		}
@@ -39,7 +44,7 @@
 			"name": "2. Authentication",
 			"item": [
 				{
-					"name": "Login as Admin",
+					"name": "Login as Admin (Auto-saves Token)",
 					"event": [
 						{
 							"listen": "test",
@@ -48,7 +53,7 @@
 									"var jsonData = pm.response.json();",
 									"if (jsonData.success && jsonData.data && jsonData.data.token) {",
 									"    pm.collectionVariables.set('token', jsonData.data.token);",
-									"    console.log('Saved token to collection variable');",
+									"    console.log('Saved Admin JWT Token successfully');",
 									"}"
 								],
 								"type": "text/javascript"
@@ -75,7 +80,7 @@
 					}
 				},
 				{
-					"name": "Register Homeowner & House",
+					"name": "Register New Homeowner (Min 8 Chars Password)",
 					"event": [
 						{
 							"listen": "test",
@@ -84,6 +89,8 @@
 									"var jsonData = pm.response.json();",
 									"if (jsonData.success && jsonData.data && jsonData.data.token) {",
 									"    pm.collectionVariables.set('token', jsonData.data.token);",
+									"    pm.collectionVariables.set('homeownerUserId', jsonData.data.user.id);",
+									"    console.log('Saved Homeowner JWT Token and User ID');",
 									"}"
 								],
 								"type": "text/javascript"
@@ -100,7 +107,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"first_name\": \"Alexander\",\n    \"last_name\": \"Vance\",\n    \"email\": \"vance@vigilis.com\",\n    \"password\": \"password123\",\n    \"phone_number\": \"+1-555-019-2831\",\n    \"house_name\": \"Vance Manor\",\n    \"address\": \"742 Evergreen Terrace\"\n}"
+							"raw": "{\n    \"first_name\": \"Alexander\",\n    \"last_name\": \"Vance\",\n    \"email\": \"alexander.vance@vigilis.com\",\n    \"password\": \"password123\",\n    \"phone_number\": \"+1-555-019-2831\",\n    \"house_name\": \"Vance Manor Deluxe\",\n    \"address\": \"742 Evergreen Terrace\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/auth/register-homeowner",
@@ -110,7 +117,7 @@
 					}
 				},
 				{
-					"name": "Get Current User Profile",
+					"name": "Get Current User Profile (/auth/me)",
 					"request": {
 						"method": "GET",
 						"header": [
@@ -129,7 +136,104 @@
 			]
 		},
 		{
-			"name": "3. Platform Administration",
+			"name": "3. Homeowner Payment & Subscription",
+			"item": [
+				{
+					"name": "Submit Payment Transaction (Homeowner)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"subscription_plan\": \"STANDARD\",\n    \"payment_method\": \"CREDIT_CARD\",\n    \"payment_reference\": \"TXN_9823719283\",\n    \"payment_amount\": 49.99\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/houses/payment/submit",
+							"host": ["{{baseUrl}}"],
+							"path": ["houses", "payment", "submit"]
+						}
+					}
+				},
+				{
+					"name": "Check Current Payment Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/houses/payment/status",
+							"host": ["{{baseUrl}}"],
+							"path": ["houses", "payment", "status"]
+						}
+					}
+				},
+				{
+					"name": "Admin Approve Payment (Unlocks Homeowner)",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"APPROVE\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/homeowners/{{homeownerUserId}}/payment",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "homeowners", "{{homeownerUserId}}", "payment"]
+						}
+					}
+				},
+				{
+					"name": "Admin Reject Payment",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"REJECT\",\n    \"rejection_reason\": \"Invalid transaction reference. Bank wire not found.\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/homeowners/{{homeownerUserId}}/payment",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "homeowners", "{{homeownerUserId}}", "payment"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "4. Platform Administration",
 			"item": [
 				{
 					"name": "Get Platform Statistics",
@@ -149,7 +253,7 @@
 					}
 				},
 				{
-					"name": "Get All Homeowners",
+					"name": "Get All Homeowners & Houses",
 					"request": {
 						"method": "GET",
 						"header": [
@@ -181,7 +285,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"first_name\": \"Claire\",\n    \"last_name\": \"Sterling\",\n    \"email\": \"claire@vigilis.com\",\n    \"password\": \"password123\",\n    \"phone_number\": \"+1-555-019-4455\",\n    \"house_name\": \"Sterling Modern Residence\",\n    \"address\": \"108 Ocean Boulevard\"\n}"
+							"raw": "{\n    \"first_name\": \"Claire\",\n    \"last_name\": \"Sterling\",\n    \"email\": \"claire.sterling@vigilis.com\",\n    \"password\": \"password123\",\n    \"phone_number\": \"+1-555-019-4455\",\n    \"house_name\": \"Sterling Modern Residence\",\n    \"address\": \"108 Ocean Boulevard\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/admin/homeowners",
@@ -189,11 +293,103 @@
 							"path": ["admin", "homeowners"]
 						}
 					}
+				},
+				{
+					"name": "Update Homeowner Details",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"first_name\": \"Alexander Updated\",\n    \"last_name\": \"Vance\",\n    \"house_name\": \"Vance Smart Estate\",\n    \"address\": \"742 Evergreen Terrace Suite 2\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/homeowners/{{homeownerUserId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "homeowners", "{{homeownerUserId}}"]
+						}
+					}
+				},
+				{
+					"name": "Suspend Account (Status: SUSPENDED)",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"SUSPENDED\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/users/{{homeownerUserId}}/status",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "users", "{{homeownerUserId}}", "status"]
+						}
+					}
+				},
+				{
+					"name": "Activate Account (Status: ACTIVE)",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"ACTIVE\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/admin/users/{{homeownerUserId}}/status",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "users", "{{homeownerUserId}}", "status"]
+						}
+					}
+				},
+				{
+					"name": "Delete User Account",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/admin/users/{{homeownerUserId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["admin", "users", "{{homeownerUserId}}"]
+						}
+					}
 				}
 			]
 		},
 		{
-			"name": "4. House Management",
+			"name": "5. House Details & Settings",
 			"item": [
 				{
 					"name": "Get House Details",
@@ -211,11 +407,36 @@
 							"path": ["houses"]
 						}
 					}
+				},
+				{
+					"name": "Update House Settings",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Vance Fortress\",\n    \"address\": \"742 Evergreen Terrace\",\n    \"emergency_contact_police\": \"911\",\n    \"emergency_contact_security\": \"+1-800-VIGILIS\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/houses",
+							"host": ["{{baseUrl}}"],
+							"path": ["houses"]
+						}
+					}
 				}
 			]
 		},
 		{
-			"name": "5. Smart Lighting",
+			"name": "6. Smart Lighting",
 			"item": [
 				{
 					"name": "Get Lighting Status",
@@ -260,7 +481,7 @@
 					}
 				},
 				{
-					"name": "Set Brightness (0 - 100%)",
+					"name": "Set Brightness Percentage (0 - 100%)",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -287,7 +508,7 @@
 			]
 		},
 		{
-			"name": "6. Security & AI Threat Engine",
+			"name": "7. Security & AI Threat Engine",
 			"item": [
 				{
 					"name": "Get Security Status & Events",
@@ -332,7 +553,7 @@
 					}
 				},
 				{
-					"name": "Send Telemetry / Camera Motion Capture (AI Intake)",
+					"name": "Simulate Camera / Sensor AI Threat Intake",
 					"request": {
 						"method": "POST",
 						"header": [
@@ -347,7 +568,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"event_type\": \"MOTION_DETECTED\",\n    \"has_person\": true,\n    \"person_confidence\": 0.97,\n    \"has_face\": true,\n    \"face_confidence\": 0.92\n}"
+							"raw": "{\n    \"event_type\": \"MOTION_DETECTED\",\n    \"has_person\": true,\n    \"person_confidence\": 0.98,\n    \"has_face\": true,\n    \"face_confidence\": 0.93\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/security/telemetry/capture",
@@ -359,7 +580,7 @@
 			]
 		},
 		{
-			"name": "7. Emergency System",
+			"name": "8. Emergency System",
 			"item": [
 				{
 					"name": "Trigger Emergency Panic Button",
@@ -406,7 +627,7 @@
 			]
 		},
 		{
-			"name": "8. Devices Management",
+			"name": "9. Devices Management",
 			"item": [
 				{
 					"name": "Get Connected Devices",
@@ -441,7 +662,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"name\": \"Garden Entrance Cam\",\n    \"device_identifier\": \"CAM_GARDEN_01\",\n    \"type\": \"ESP32_CAM\",\n    \"ip_address\": \"192.168.1.150\",\n    \"specific_config\": {\n        \"location_name\": \"Garden Perimeter\",\n        \"stream_url\": \"http://192.168.1.150:81/stream\"\n    }\n}"
+							"raw": "{\n    \"name\": \"Front Gate AI Cam\",\n    \"device_identifier\": \"CAM_FRONT_01\",\n    \"type\": \"ESP32_CAM\",\n    \"ip_address\": \"192.168.1.150\",\n    \"specific_config\": {\n        \"location_name\": \"Front Entrance\",\n        \"stream_url\": \"http://192.168.1.150:81/stream\"\n    }\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/devices",
@@ -453,7 +674,7 @@
 			]
 		},
 		{
-			"name": "9. Residents Management",
+			"name": "10. Residents Management",
 			"item": [
 				{
 					"name": "Get House Residents",

@@ -10,11 +10,13 @@ import 'screens/resident/resident_dashboard.dart';
 
 void main() {
   final apiService = ApiService();
+  final authProvider = AuthProvider(apiService);
+
   runApp(
     MultiProvider(
       providers: [
         Provider<ApiService>.value(value: apiService),
-        ChangeNotifierProvider<AuthProvider>(create: (_) => AuthProvider()),
+        ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
       ],
       child: const VigilisApp(),
     ),

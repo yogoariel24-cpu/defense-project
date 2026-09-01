@@ -1,5 +1,5 @@
 const bcrypt = require('bcryptjs');
-const { User, Homeowner, House, Resident, Device, SecurityEvent, EmergencyEvent } = require('../models');
+const { User, Homeowner, House, Resident, Device, SecurityEvent, EmergencyEvent, ActivityLog } = require('../models');
 
 // 1. Get all homeowners with their associated houses, residents, and devices
 const getAllHomeowners = async (req, res, next) => {
@@ -34,6 +34,10 @@ const createHomeowner = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'First name, last name, email, and password are required.' });
     }
 
+    if (password.length < 8) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long.' });
+    }
+
     const existing = await User.findOne({ where: { email: email.toLowerCase().trim() } });
     if (existing) {
       return res.status(400).json({ success: false, message: 'An account with this email already exists.' });
@@ -53,6 +57,8 @@ const createHomeowner = async (req, res, next) => {
     const homeowner = await Homeowner.create({
       user_id: user.id,
       emergency_phone: phone_number?.trim() || null,
+      payment_status: 'APPROVED', // Admin-provisioned accounts are pre-approved
+      subscription_plan: 'STANDARD',
     });
 
     const finalHouseId = house_id?.trim() || `HOUSE_${Math.floor(100 + Math.random() * 900)}`;
@@ -95,7 +101,7 @@ const updateHomeowner = async (req, res, next) => {
     if (phone_number !== undefined) user.phone_number = phone_number?.trim();
     if (status && ['ACTIVE', 'SUSPENDED', 'PENDING'].includes(status)) user.status = status;
 
-    if (password && password.trim().length >= 6) {
+    if (password && password.trim().length >= 8) {
       user.password_hash = await bcrypt.hash(password.trim(), 10);
     }
 
@@ -118,7 +124,7 @@ const updateHomeowner = async (req, res, next) => {
   }
 };
 
-// 4. Update status (Activate / Suspend)
+// 4. Update status (Activate / Suspend) - Cascades to all house sub-residents
 const updateAccountStatus = async (req, res, next) => {
   try {
     const { userId } = req.params;
@@ -128,7 +134,10 @@ const updateAccountStatus = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid status value.' });
     }
 
-    const user = await User.findByPk(userId);
+    const user = await User.findByPk(userId, {
+      include: [{ model: Homeowner, as: 'homeownerProfile', include: [{ model: House, as: 'house', include: [{ model: Resident, as: 'residents' }] }] }],
+    });
+
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
@@ -136,9 +145,23 @@ const updateAccountStatus = async (req, res, next) => {
     user.status = status;
     await user.save();
 
+    // Cascade suspension / activation to all sub-residents belonging to this homeowner's house
+    if (user.homeownerProfile && user.homeownerProfile.house && user.homeownerProfile.house.residents) {
+      const residentUserIds = user.homeownerProfile.house.residents.map((r) => r.user_id).filter(Boolean);
+      if (residentUserIds.length > 0) {
+        await User.update({ status }, { where: { id: residentUserIds } });
+      }
+    }
+
+    await ActivityLog.create({
+      user_id: req.user.id,
+      action: 'ACCOUNT_STATUS_CHANGED',
+      details: `Admin changed status for ${user.email} (and house sub-residents) to ${status}`,
+    }).catch(() => {});
+
     res.status(200).json({
       success: true,
-      message: `Account status updated to ${status}.`,
+      message: `Account and associated house resident access updated to ${status}.`,
       data: { user: { id: user.id, email: user.email, status: user.status } },
     });
   } catch (error) {
@@ -146,17 +169,34 @@ const updateAccountStatus = async (req, res, next) => {
   }
 };
 
-// 5. Delete Homeowner account and associated house cascade
+// 5. Delete Homeowner account and associated house & residents cascade
 const deleteAccount = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    const user = await User.findByPk(userId);
+    const user = await User.findByPk(userId, {
+      include: [{ model: Homeowner, as: 'homeownerProfile', include: [{ model: House, as: 'house', include: [{ model: Resident, as: 'residents' }] }] }],
+    });
+
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
 
+    // Delete all resident users associated with this homeowner's house
+    if (user.homeownerProfile && user.homeownerProfile.house && user.homeownerProfile.house.residents) {
+      const residentUserIds = user.homeownerProfile.house.residents.map((r) => r.user_id).filter(Boolean);
+      if (residentUserIds.length > 0) {
+        await User.destroy({ where: { id: residentUserIds } });
+      }
+    }
+
+    await ActivityLog.create({
+      user_id: req.user.id,
+      action: 'ACCOUNT_DELETED',
+      details: `Admin permanently deleted homeowner ${user.email} and all associated residents & house data.`,
+    }).catch(() => {});
+
     await user.destroy();
-    res.status(200).json({ success: true, message: 'Account and associated house deleted successfully.' });
+    res.status(200).json({ success: true, message: 'Account, house, and all associated residents permanently removed.' });
   } catch (error) {
     next(error);
   }
@@ -188,6 +228,66 @@ const getPlatformStats = async (req, res, next) => {
   }
 };
 
+// 7. Validate or Reject Homeowner Payment
+const validatePayment = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const { action, rejection_reason } = req.body; // 'APPROVE' or 'REJECT'
+
+    const homeowner = await Homeowner.findOne({
+      where: { user_id: userId },
+      include: [{ model: User, as: 'user' }],
+    });
+
+    if (!homeowner) {
+      return res.status(404).json({ success: false, message: 'Homeowner profile not found.' });
+    }
+
+    if (action === 'APPROVE') {
+      homeowner.payment_status = 'APPROVED';
+      homeowner.rejection_reason = null;
+      await homeowner.save();
+
+      if (homeowner.user) {
+        homeowner.user.status = 'ACTIVE';
+        await homeowner.user.save();
+      }
+
+      await ActivityLog.create({
+        user_id: req.user.id,
+        action: 'PAYMENT_APPROVED',
+        details: `Platform Administrator approved subscription payment for ${homeowner.user?.email || userId}`,
+      }).catch(() => {});
+
+      return res.status(200).json({
+        success: true,
+        message: 'Payment approved successfully. Homeowner unlocked and activated.',
+        data: { homeowner },
+      });
+    } else if (action === 'REJECT') {
+      homeowner.payment_status = 'REJECTED';
+      homeowner.rejection_reason = rejection_reason || 'Payment verification reference was rejected.';
+      await homeowner.save();
+
+      await ActivityLog.create({
+        user_id: req.user.id,
+        action: 'PAYMENT_REJECTED',
+        details: `Payment rejected for ${homeowner.user?.email || userId}. Reason: ${homeowner.rejection_reason}`,
+      }).catch(() => {});
+
+      return res.status(200).json({
+        success: true,
+        message: 'Payment marked as rejected.',
+        data: { homeowner },
+      });
+    } else {
+      return res.status(400).json({ success: false, message: 'Action must be APPROVE or REJECT.' });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAllHomeowners,
   createHomeowner,
@@ -195,4 +295,5 @@ module.exports = {
   updateAccountStatus,
   deleteAccount,
   getPlatformStats,
+  validatePayment,
 };

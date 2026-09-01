@@ -35,6 +35,10 @@ const EmergencyEvent = sequelize.define('emergency_events', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
+  google_maps_url: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
   dispatch_logs: {
     type: DataTypes.JSON,
     allowNull: true,

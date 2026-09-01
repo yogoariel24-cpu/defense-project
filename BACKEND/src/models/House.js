@@ -15,6 +15,14 @@ const House = sequelize.define('houses', {
     type: DataTypes.TEXT,
     allowNull: false,
   },
+  latitude: {
+    type: DataTypes.DECIMAL(10, 8),
+    defaultValue: 37.774929,
+  },
+  longitude: {
+    type: DataTypes.DECIMAL(11, 8),
+    defaultValue: -122.419416,
+  },
   homeowner_id: {
     type: DataTypes.UUID,
     allowNull: false,

@@ -1,5 +1,5 @@
 const { House, SecurityEvent, AIAnalysis, Camera, MotionSensor, FaceProfile } = require('../models');
-const { analyzeThreatAndBiometrics } = require('../services/aiThreatService');
+const { processVisionTelemetry } = require('../services/aiVisionEngine');
 
 const getSecurityStatus = async (req, res, next) => {
   try {
@@ -81,6 +81,7 @@ const setSecurityState = async (req, res, next) => {
 
 /**
  * Endpoint called by ESP32 / ESP32-CAM or Test Simulator when motion or capture occurs.
+ * Runs OpenCV Facial Recognition & Multi-Class Object Recognition (Human vs Animal vs Vehicle).
  */
 const reportSensorOrCameraCapture = async (req, res, next) => {
   try {
@@ -88,12 +89,13 @@ const reportSensorOrCameraCapture = async (req, res, next) => {
     const {
       device_id,
       event_type = 'MOTION_DETECTED',
-      image_url,
-      has_person = true,
-      person_confidence = 0.94,
+      detected_object = 'person', // 'person', 'dog', 'cat', 'car', etc.
+      object_confidence = 0.95,
       has_face = true,
       face_confidence = 0.91,
       face_embedding = null,
+      camera_name = 'Perimeter Camera',
+      image_url,
     } = req.body;
 
     const securityEvent = await SecurityEvent.create({
@@ -102,31 +104,34 @@ const reportSensorOrCameraCapture = async (req, res, next) => {
       event_type,
       severity: 'MEDIUM',
       image_url: image_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=600',
-      description: `Telemetry trigger: ${event_type} detected. AI threat analysis initiated.`,
+      description: `Telemetry trigger: ${event_type} (${detected_object}) detected. AI Vision evaluation running.`,
       status: 'INVESTIGATING',
     });
 
     const io = req.app.get('io');
 
-    // Run Node.js AI Threat Analysis
-    const aiResult = await analyzeThreatAndBiometrics({
+    // Run AI Vision & Object Classification Pipeline
+    const aiResult = await processVisionTelemetry({
       houseId,
       securityEventId: securityEvent.id,
-      hasPerson: has_person,
-      personConfidence: person_confidence,
+      detectedObjectLabel: detected_object,
+      objectConfidence: object_confidence,
       hasFace: has_face,
       faceConfidence: face_confidence,
       incomingEmbedding: face_embedding,
-      capturedImageUrl: securityEvent.image_url,
+      cameraName: camera_name,
+      imageUrl: securityEvent.image_url,
       io,
     });
 
     res.status(201).json({
       success: true,
-      message: 'Telemetry received and analyzed.',
+      message: 'Telemetry received and evaluated by Vigilis AI Vision Engine.',
       data: {
         securityEvent,
         aiAnalysis: aiResult.aiRecord,
+        objectCategory: aiResult.objectCategory,
+        faceMatchResult: aiResult.matchResult,
         threatLevel: aiResult.threatLevel,
         riskScore: aiResult.riskScore,
       },

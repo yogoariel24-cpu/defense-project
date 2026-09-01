@@ -3,11 +3,13 @@ import '../models/user_model.dart';
 import 'api_service.dart';
 
 class AuthProvider extends ChangeNotifier {
-  final ApiService _apiService = ApiService();
+  final ApiService _apiService;
   UserModel? _currentUser;
   String? _token;
   bool _isLoading = false;
   String? _errorMessage;
+
+  AuthProvider([ApiService? apiService]) : _apiService = apiService ?? ApiService();
 
   UserModel? get currentUser => _currentUser;
   String? get token => _token;
