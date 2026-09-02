@@ -412,4 +412,55 @@ class ApiService {
       return {'success': false, 'message': 'Failed to update payment validation status'};
     }
   }
+
+  // --- Hardware Device Ordering & Admin Provisioning ---
+  Future<Map<String, dynamic>> orderDevice(Map<String, dynamic> orderData) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/houses/devices/order'),
+        headers: _headers,
+        body: jsonEncode(orderData),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to submit hardware device order'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getHouseDeviceOrders() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/houses/devices/orders'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 6));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to load device orders'};
+    }
+  }
+
+  Future<Map<String, dynamic>> provisionDeviceToHouse(String houseId, Map<String, dynamic> deviceData) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/admin/houses/$houseId/devices'),
+        headers: _headers,
+        body: jsonEncode(deviceData),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to provision hardware device'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getAdminDeviceOrders() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/admin/device-orders'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 6));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to load device orders'};
+    }
+  }
 }

@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
-const { User, Homeowner, House, Resident, Device, SecurityEvent, EmergencyEvent, ActivityLog } = require('../models');
+const { User, Homeowner, House, Resident, Device, DeviceOrder, Camera, SmartLight, MotionSensor, LightSensor, SecurityEvent, EmergencyEvent, ActivityLog } = require('../models');
 
-// 1. Get all homeowners with their associated houses, residents, and devices
+// 1. Get all homeowners with their associated houses, residents, devices, and hardware orders
 const getAllHomeowners = async (req, res, next) => {
   try {
     const homeowners = await Homeowner.findAll({
@@ -13,6 +13,7 @@ const getAllHomeowners = async (req, res, next) => {
           include: [
             { model: Resident, as: 'residents' },
             { model: Device, as: 'devices' },
+            { model: DeviceOrder, as: 'deviceOrders' },
           ],
         },
       ],
@@ -57,7 +58,7 @@ const createHomeowner = async (req, res, next) => {
     const homeowner = await Homeowner.create({
       user_id: user.id,
       emergency_phone: phone_number?.trim() || null,
-      payment_status: 'APPROVED', // Admin-provisioned accounts are pre-approved
+      payment_status: 'APPROVED',
       subscription_plan: 'STANDARD',
     });
 
@@ -288,6 +289,125 @@ const validatePayment = async (req, res, next) => {
   }
 };
 
+// 8. Admin Provisions/Registers a Hardware Device with its characteristics to a House
+const provisionDeviceToHouse = async (req, res, next) => {
+  try {
+    const { houseId } = req.params;
+    const {
+      device_identifier,
+      name,
+      type, // 'ESP32_CAM', 'CAMERA', 'SMART_LIGHT', 'MOTION_SENSOR', 'LIGHT_SENSOR', 'ESP32'
+      ip_address,
+      mac_address,
+      specific_config = {},
+      order_id,
+    } = req.body;
+
+    if (!device_identifier || !name || !type) {
+      return res.status(400).json({ success: false, message: 'Device identifier, name, and type are required.' });
+    }
+
+    const house = await House.findByPk(houseId);
+    if (!house) return res.status(404).json({ success: false, message: 'House not found.' });
+
+    // Check if identifier is unique
+    const existing = await Device.findOne({ where: { device_identifier: device_identifier.trim() } });
+    if (existing) {
+      return res.status(400).json({ success: false, message: `Device identifier '${device_identifier}' already exists.` });
+    }
+
+    const device = await Device.create({
+      house_id: houseId,
+      device_identifier: device_identifier.trim(),
+      name: name.trim(),
+      type,
+      ip_address: ip_address?.trim() || null,
+      mac_address: mac_address?.trim() || null,
+      status: 'ONLINE',
+      last_heartbeat_at: new Date(),
+    });
+
+    // Create specialized sub-device record based on type
+    if (type === 'CAMERA' || type === 'ESP32_CAM') {
+      await Camera.create({
+        device_id: device.id,
+        house_id: houseId,
+        location_name: specific_config.location_name || name.trim(),
+        stream_url: specific_config.stream_url || (ip_address ? `http://${ip_address}:81/stream` : 'http://192.168.1.150:81/stream'),
+        resolution: specific_config.resolution || '1600x1200',
+        is_active: true,
+        ai_enabled: true,
+      });
+    } else if (type === 'SMART_LIGHT') {
+      await SmartLight.create({
+        device_id: device.id,
+        house_id: houseId,
+        location_name: specific_config.location_name || name.trim(),
+        is_on: true,
+        brightness_percentage: specific_config.brightness || 80,
+        rgb_color: specific_config.rgb_color || '#FFFFFF',
+        auto_mode: true,
+      });
+    } else if (type === 'MOTION_SENSOR') {
+      await MotionSensor.create({
+        device_id: device.id,
+        house_id: houseId,
+        location_name: specific_config.location_name || name.trim(),
+        sensitivity: specific_config.sensitivity || 8,
+        is_triggered: false,
+      });
+    } else if (type === 'LIGHT_SENSOR') {
+      await LightSensor.create({
+        device_id: device.id,
+        house_id: houseId,
+        location_name: specific_config.location_name || name.trim(),
+        current_lux: 450.0,
+        threshold_lux: 300.0,
+      });
+    }
+
+    if (order_id) {
+      const order = await DeviceOrder.findByPk(order_id);
+      if (order) {
+        order.provision_status = 'PROVISIONED';
+        order.payment_status = 'APPROVED';
+        await order.save();
+      }
+    }
+
+    await ActivityLog.create({
+      user_id: req.user.id,
+      house_id: houseId,
+      action: 'DEVICE_PROVISIONED',
+      details: `Admin provisioned ${type} (${name}) with ID '${device_identifier}' to house ${house.name}.`,
+    }).catch(() => {});
+
+    res.status(201).json({
+      success: true,
+      message: `Hardware device '${name}' provisioned and linked to ${house.name} successfully.`,
+      data: { device },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// 9. Get all device orders
+const getAllDeviceOrders = async (req, res, next) => {
+  try {
+    const orders = await DeviceOrder.findAll({
+      include: [
+        { model: House, as: 'house' },
+        { model: Homeowner, as: 'homeowner', include: [{ model: User, as: 'user' }] },
+      ],
+      order: [['created_at', 'DESC']],
+    });
+    res.status(200).json({ success: true, data: { orders } });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAllHomeowners,
   createHomeowner,
@@ -296,4 +416,6 @@ module.exports = {
   deleteAccount,
   getPlatformStats,
   validatePayment,
+  provisionDeviceToHouse,
+  getAllDeviceOrders,
 };

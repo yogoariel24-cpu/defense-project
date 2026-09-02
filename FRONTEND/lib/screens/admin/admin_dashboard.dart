@@ -203,17 +203,209 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  void _showAddDeviceDialog(Map<String, dynamic> homeowner, {Map<String, dynamic>? prefillOrder}) {
+    final house = homeowner['house'] ?? {};
+    final houseId = house['id'] ?? '';
+    final houseName = house['name'] ?? 'Residence';
+
+    String selectedType = prefillOrder?['device_type'] ?? 'CAMERA';
+    if (selectedType == 'ALARM_HUB') selectedType = 'ESP32';
+
+    final identifierCtrl = TextEditingController(
+      text: prefillOrder != null ? '${prefillOrder['device_type']}_${houseId}_01' : 'DEV_${houseId}_01',
+    );
+    final nameCtrl = TextEditingController(
+      text: prefillOrder?['device_name'] ?? (selectedType == 'CAMERA' ? 'Perimeter Security Camera' : 'Living Room Light'),
+    );
+    final ipCtrl = TextEditingController(text: '192.168.1.150');
+    final macCtrl = TextEditingController(text: '24:0A:C4:B8:3D:1F');
+    final streamOrLocCtrl = TextEditingController(
+      text: selectedType == 'CAMERA' ? 'http://192.168.1.150:81/stream' : 'Living Room Area',
+    );
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              backgroundColor: AppTheme.primaryCard,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.memory_rounded, color: AppTheme.accentCyan, size: 24),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Provision Hardware Device ($houseName)',
+                            style: const TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (prefillOrder != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accentBlue.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppTheme.accentCyan.withOpacity(0.4)),
+                        ),
+                        child: Text(
+                          'Fulfilling Order: ${prefillOrder['device_name']} (\$${prefillOrder['total_price']}) • Ref: ${prefillOrder['payment_reference']}',
+                          style: const TextStyle(color: AppTheme.accentCyan, fontSize: 11, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: ['CAMERA', 'SMART_LIGHT', 'MOTION_SENSOR', 'LIGHT_SENSOR', 'ESP32'].contains(selectedType) ? selectedType : 'CAMERA',
+                      dropdownColor: AppTheme.primaryCard,
+                      decoration: const InputDecoration(labelText: 'Device Type *', prefixIcon: Icon(Icons.category_outlined)),
+                      items: const [
+                        DropdownMenuItem(value: 'CAMERA', child: Text('📷 AI Security Camera (ESP32-CAM)')),
+                        DropdownMenuItem(value: 'SMART_LIGHT', child: Text('💡 Smart PWM Light Bulb')),
+                        DropdownMenuItem(value: 'MOTION_SENSOR', child: Text('📡 PIR Motion Detector')),
+                        DropdownMenuItem(value: 'LIGHT_SENSOR', child: Text('☀️ Ambient Light Sensor (LDR)')),
+                        DropdownMenuItem(value: 'ESP32', child: Text('🚨 Emergency Siren / Panic Alarm Hub')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setDialogState(() {
+                            selectedType = val;
+                            if (val == 'CAMERA') {
+                              nameCtrl.text = 'Perimeter Camera';
+                              streamOrLocCtrl.text = 'http://192.168.1.150:81/stream';
+                            } else if (val == 'SMART_LIGHT') {
+                              nameCtrl.text = 'Main Living Room Bulb';
+                              streamOrLocCtrl.text = 'Living Room';
+                            } else if (val == 'MOTION_SENSOR') {
+                              nameCtrl.text = 'Front Porch Motion Sensor';
+                              streamOrLocCtrl.text = 'Front Porch';
+                            }
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: identifierCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Hardware Device Identifier *',
+                        hintText: 'e.g. CAM_FRONT_01 or LIGHT_01',
+                        prefixIcon: Icon(Icons.qr_code_rounded),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Display Name *',
+                        prefixIcon: Icon(Icons.label_outline),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: ipCtrl,
+                            decoration: const InputDecoration(labelText: 'IP Address', hintText: '192.168.1.150'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: macCtrl,
+                            decoration: const InputDecoration(labelText: 'MAC Address', hintText: '24:0A:C4:...'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: streamOrLocCtrl,
+                      decoration: InputDecoration(
+                        labelText: selectedType == 'CAMERA' ? 'RTSP / HTTP Stream URL' : 'Installation Location',
+                        prefixIcon: Icon(selectedType == 'CAMERA' ? Icons.videocam_outlined : Icons.place_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accentCyan, foregroundColor: Colors.black),
+                            onPressed: () async {
+                              if (identifierCtrl.text.trim().isEmpty || nameCtrl.text.trim().isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Identifier and Name are required'), backgroundColor: AppTheme.statusWarning),
+                                );
+                                return;
+                              }
+
+                              final api = Provider.of<ApiService>(context, listen: false);
+                              final res = await api.provisionDeviceToHouse(houseId, {
+                                'device_identifier': identifierCtrl.text.trim(),
+                                'name': nameCtrl.text.trim(),
+                                'type': selectedType,
+                                'ip_address': ipCtrl.text.trim(),
+                                'mac_address': macCtrl.text.trim(),
+                                'order_id': prefillOrder?['id'],
+                                'specific_config': {
+                                  'location_name': streamOrLocCtrl.text.trim(),
+                                  if (selectedType == 'CAMERA') 'stream_url': streamOrLocCtrl.text.trim(),
+                                },
+                              });
+
+                              if (ctx.mounted) Navigator.pop(ctx);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(res['success'] == true ? 'Hardware device provisioned to $houseName!' : (res['message'] ?? 'Provisioning failed')),
+                                    backgroundColor: res['success'] == true ? AppTheme.statusSafe : AppTheme.statusDanger,
+                                  ),
+                                );
+                                _fetchAdminData();
+                              }
+                            },
+                            child: const Text('Provision Device', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _showEditDialog(Map<String, dynamic> homeowner) {
     final user = homeowner['user'] ?? {};
     final house = homeowner['house'] ?? {};
-    final userId = user['id'];
+    final userId = user['id'] ?? '';
 
-    final firstNameCtrl = TextEditingController(text: user['first_name']);
-    final lastNameCtrl = TextEditingController(text: user['last_name']);
-    final emailCtrl = TextEditingController(text: user['email']);
-    final phoneCtrl = TextEditingController(text: user['phone_number']);
-    final houseNameCtrl = TextEditingController(text: house['name']);
-    final addressCtrl = TextEditingController(text: house['address']);
+    final firstNameCtrl = TextEditingController(text: user['first_name'] ?? '');
+    final lastNameCtrl = TextEditingController(text: user['last_name'] ?? '');
+    final emailCtrl = TextEditingController(text: user['email'] ?? '');
+    final phoneCtrl = TextEditingController(text: user['phone_number'] ?? '');
+    final houseNameCtrl = TextEditingController(text: house['name'] ?? '');
+    final addressCtrl = TextEditingController(text: house['address'] ?? '');
     final passCtrl = TextEditingController();
 
     showDialog(
@@ -244,9 +436,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email Address', prefixIcon: Icon(Icons.email_outlined))),
+                TextField(controller: emailCtrl, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email Address', prefixIcon: Icon(Icons.email_outlined))),
                 const SizedBox(height: 12),
-                TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Phone', prefixIcon: Icon(Icons.phone_outlined))),
+                TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone Number', prefixIcon: Icon(Icons.phone_outlined))),
                 const SizedBox(height: 12),
                 TextField(controller: houseNameCtrl, decoration: const InputDecoration(labelText: 'House Name', prefixIcon: Icon(Icons.home_outlined))),
                 const SizedBox(height: 12),
@@ -304,7 +496,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     if (res['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Account status changed to $newStatus'),
+          content: Text('Account status changed to $newStatus (all house residents updated)'),
           backgroundColor: newStatus == 'ACTIVE' ? AppTheme.statusSafe : AppTheme.statusDanger,
         ),
       );
@@ -432,15 +624,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('ACTIVE ALARMS', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
+                                const Text('TOTAL DEVICES', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
                                 const SizedBox(height: 8),
                                 Text(
-                                  '${_stats['activeAlarms'] ?? 0}',
-                                  style: TextStyle(
-                                    color: (_stats['activeAlarms'] ?? 0) > 0 ? AppTheme.statusDanger : AppTheme.statusSafe,
-                                    fontSize: 26,
-                                    fontWeight: FontWeight.w900,
-                                  ),
+                                  '${_stats['totalDevices'] ?? 0}',
+                                  style: const TextStyle(color: AppTheme.textLight, fontSize: 26, fontWeight: FontWeight.w900),
                                 ),
                               ],
                             ),
@@ -450,55 +638,71 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Filter Tabs
-                    Row(
-                      children: [
-                        _buildFilterButton('All Homeowners (${_homeowners.length})', !_filterPendingOnly, () => setState(() => _filterPendingOnly = false)),
-                        const SizedBox(width: 8),
-                        _buildFilterButton('Needs Validation ($pendingCount)', _filterPendingOnly, () => setState(() => _filterPendingOnly = true), isAlert: pendingCount > 0),
-                      ],
+                    // Provision Homeowner CTA Banner
+                    GlassCard(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(color: AppTheme.accentCyan.withOpacity(0.15), shape: BoxShape.circle),
+                            child: const Icon(Icons.person_add_alt_1_rounded, color: AppTheme.accentCyan, size: 24),
+                          ),
+                          const SizedBox(width: 14),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Create Homeowner Account', style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w800, fontSize: 14)),
+                                Text('Register homeowner, generate credentials & provision house', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('PROVISION'),
+                            onPressed: _showProvisionDialog,
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 24),
 
-                    // Search & Action Header
+                    // Filter & Search Header
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'Managed Homeowners',
-                          style: TextStyle(color: AppTheme.textLight, fontSize: 18, fontWeight: FontWeight.w800),
-                        ),
-                        ElevatedButton.icon(
-                          icon: const Icon(Icons.add_home_rounded, size: 18),
-                          label: const Text('Provision House'),
-                          style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
-                          onPressed: _showProvisionDialog,
-                        ),
+                        const Text('Homeowner Accounts & Houses', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800)),
+                        const Spacer(),
+                        _buildFilterButton('ALL', !_filterPendingOnly, () => setState(() => _filterPendingOnly = false)),
+                        const SizedBox(width: 8),
+                        _buildFilterButton('PENDING PAYMENTS', _filterPendingOnly, () => setState(() => _filterPendingOnly = true), isAlert: pendingCount > 0),
                       ],
                     ),
                     const SizedBox(height: 12),
 
-                    // Search Bar
+                    // Search Field
                     TextField(
-                      onChanged: (v) => setState(() => _searchQuery = v),
                       decoration: const InputDecoration(
                         hintText: 'Search by homeowner name, email, or house ID...',
-                        prefixIcon: Icon(Icons.search_rounded),
+                        prefixIcon: Icon(Icons.search, color: AppTheme.textMuted),
                       ),
+                      onChanged: (v) => setState(() => _searchQuery = v),
                     ),
                     const SizedBox(height: 16),
 
+                    // Homeowners List
                     if (filteredHomeowners.isEmpty)
-                      const GlassCard(
+                      Center(
                         child: Padding(
-                          padding: EdgeInsets.all(32),
-                          child: Center(
+                          padding: const EdgeInsets.symmetric(vertical: 40),
+                          child: GlassCard(
                             child: Column(
                               children: [
-                                Icon(Icons.people_outline, color: AppTheme.textMuted, size: 36),
-                                SizedBox(height: 10),
-                                Text('No homeowner accounts found in this view.', style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700)),
-                                Text('Try switching filter tabs or provisioning a new house.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                                const Icon(Icons.search_off_rounded, size: 48, color: AppTheme.textMuted),
+                                const SizedBox(height: 12),
+                                const Text('No homeowner accounts found.', style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700)),
+                                const SizedBox(height: 4),
+                                const Text('Try switching filter tabs or provisioning a new house.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
                               ],
                             ),
                           ),
@@ -522,6 +726,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           final houseName = house['name'] ?? 'Residence';
                           final residents = house['residents'] as List? ?? [];
                           final devices = house['devices'] as List? ?? [];
+                          final deviceOrders = house['deviceOrders'] as List? ?? [];
 
                           final paymentStatus = h['payment_status'] ?? 'PENDING';
                           final isPaid = paymentStatus == 'APPROVED';
@@ -561,15 +766,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       ),
                                     ),
                                     StatBadge(
-                                      label: 'PAYMENT: $paymentStatus',
-                                      color: payColor,
+                                      label: 'STATUS: $status',
+                                      color: isActive ? AppTheme.statusSafe : AppTheme.statusDanger,
                                     ),
                                     const SizedBox(width: 6),
                                     PopupMenuButton<String>(
                                       icon: const Icon(Icons.more_vert, color: AppTheme.textMuted),
                                       color: AppTheme.primarySurface,
                                       onSelected: (val) {
-                                        if (val == 'edit') {
+                                        if (val == 'add_device') {
+                                          _showAddDeviceDialog(h);
+                                        } else if (val == 'edit') {
                                           _showEditDialog(h);
                                         } else if (val == 'toggle') {
                                           _toggleStatus(user['id'], status);
@@ -579,10 +786,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       },
                                       itemBuilder: (ctx) => [
                                         const PopupMenuItem(
+                                          value: 'add_device',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.add_circle_outline_rounded, size: 18, color: AppTheme.accentCyan),
+                                              SizedBox(width: 8),
+                                              Text('Add / Provision Device', style: TextStyle(color: AppTheme.accentCyan, fontWeight: FontWeight.w700)),
+                                            ],
+                                          ),
+                                        ),
+                                        const PopupMenuItem(
                                           value: 'edit',
                                           child: Row(
                                             children: [
-                                              Icon(Icons.edit_outlined, size: 18, color: AppTheme.accentCyan),
+                                              Icon(Icons.edit_outlined, size: 18, color: AppTheme.textLight),
                                               SizedBox(width: 8),
                                               Text('Edit Details'),
                                             ],
@@ -614,7 +831,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 ),
                                 const SizedBox(height: 10),
 
-                                // Payment Info Box
+                                // Hardware & Info Box
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                   decoration: BoxDecoration(
@@ -636,9 +853,76 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   ),
                                 ),
 
-                                // Admin Validation Action Buttons
+                                // Pending Device Orders from Homeowner
+                                if (deviceOrders.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  ...deviceOrders.where((ord) => ord['provision_status'] == 'ORDERED').map((ord) {
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 6),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.amber.withOpacity(0.4)),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.shopping_cart_outlined, color: Colors.amber, size: 16),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              'Ordered: ${ord['device_name']} (\$${ord['total_price']}) • Ref: ${ord['payment_reference']}',
+                                              style: const TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.w600),
+                                            ),
+                                          ),
+                                          ElevatedButton(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.amber,
+                                              foregroundColor: Colors.black,
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                              textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                            ),
+                                            onPressed: () => _showAddDeviceDialog(h, prefillOrder: ord),
+                                            child: const Text('Provision Device'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
+                                ],
+
+                                const SizedBox(height: 10),
+                                // Action Buttons Row: Add Device beside Suspend Account & Edit
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        icon: const Icon(Icons.memory_rounded, size: 16),
+                                        label: const Text('Add Device'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: AppTheme.accentBlue,
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                        ),
+                                        onPressed: () => _showAddDeviceDialog(h),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    OutlinedButton.icon(
+                                      icon: Icon(isActive ? Icons.block_flipped : Icons.check_circle_outline, size: 16, color: isActive ? AppTheme.statusDanger : AppTheme.statusSafe),
+                                      label: Text(isActive ? 'Suspend' : 'Activate', style: TextStyle(color: isActive ? AppTheme.statusDanger : AppTheme.statusSafe)),
+                                      style: OutlinedButton.styleFrom(
+                                        side: BorderSide(color: isActive ? AppTheme.statusDanger : AppTheme.statusSafe),
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      ),
+                                      onPressed: () => _toggleStatus(user['id'], status),
+                                    ),
+                                  ],
+                                ),
+
+                                // Admin Validation Action Buttons if payment is pending
                                 if (!isPaid) ...[
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 10),
                                   Row(
                                     children: [
                                       Expanded(

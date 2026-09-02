@@ -7,6 +7,7 @@ import '../../widgets/glass_card.dart';
 import '../../widgets/stat_badge.dart';
 import '../../widgets/emergency_dialog.dart';
 import '../../widgets/custom_slider.dart';
+import 'package:intl/intl.dart';
 
 class ResidentDashboard extends StatefulWidget {
   const ResidentDashboard({super.key});
@@ -22,6 +23,10 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
     final user = auth.currentUser!;
+    final permissions = user.permissions ?? {};
+    final canViewCameras = permissions['can_view_cameras'] == true;
+    final canControlLights = permissions['can_control_lights'] ?? true;
+    final canArmSecurity = permissions['can_arm_security'] == true;
 
     return ChangeNotifierProvider(
       create: (_) => HouseProvider(auth.apiService),
@@ -29,6 +34,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
         builder: (ctx, houseProvider, _) {
           final house = houseProvider.house;
           final events = houseProvider.securityEvents;
+          final snapshotEvents = events.where((e) => e.imageUrl != null && e.imageUrl!.isNotEmpty).toList();
 
           return Scaffold(
             appBar: AppBar(
@@ -44,7 +50,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                     ),
                     child: Center(
                       child: Text(
-                        user.firstName[0],
+                        user.firstName.isNotEmpty ? user.firstName[0] : 'R',
                         style: const TextStyle(color: AppTheme.accentCyan, fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -66,7 +72,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
             body: IndexedStack(
               index: _selectedIndex,
               children: [
-                // Home Tab
+                // 0. Home Tab
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(20),
                   child: Column(
@@ -90,7 +96,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text('EMERGENCY PANIC', style: TextStyle(color: AppTheme.statusDanger, fontWeight: FontWeight.w900, fontSize: 14)),
-                                  Text('Alert all house members & authorities', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                                  Text('Alert police & house residents with live GPS', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
                                 ],
                               ),
                             ),
@@ -147,8 +153,8 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                       ),
 
                       const SizedBox(height: 20),
-                      // Recent Events
-                      const Text('Recent Security Events', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800)),
+                      // Recent Events Preview
+                      const Text('Recent Security Audit', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 12),
                       if (events.isEmpty)
                         const GlassCard(
@@ -158,7 +164,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                           ),
                         )
                       else
-                        ...events.take(5).map((e) => Padding(
+                        ...events.take(4).map((e) => Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: GlassCard(
                             padding: const EdgeInsets.all(14),
@@ -192,52 +198,181 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                   ),
                 ),
 
-                // Lighting Tab
+                // 1. Lighting Tab
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      GlassCard(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      if (!canControlLights)
+                        const GlassCard(
+                          child: Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Center(
+                              child: Column(
+                                children: [
+                                  Icon(Icons.lock_outline_rounded, color: AppTheme.statusWarning, size: 36),
+                                  SizedBox(height: 10),
+                                  Text('Lighting Control Restricted', style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700)),
+                                  SizedBox(height: 4),
+                                  Text('The homeowner has disabled smart lighting controls for your resident profile.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12), textAlign: TextAlign.center),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        GlassCard(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Lighting Control', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 16),
+                              CustomBrightnessSlider(
+                                value: house.globalBrightness,
+                                onChanged: (val) => houseProvider.setBrightness(val.round()),
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      icon: const Icon(Icons.auto_mode_rounded, size: 16),
+                                      label: const Text('Auto (LDR)'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: house.lightMode == 'AUTO' ? AppTheme.accentBlue : AppTheme.primarySurface,
+                                      ),
+                                      onPressed: () => houseProvider.setLightMode('AUTO'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      icon: const Icon(Icons.tune_rounded, size: 16),
+                                      label: const Text('Manual'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: house.lightMode == 'MANUAL' ? AppTheme.accentBlue : AppTheme.primarySurface,
+                                      ),
+                                      onPressed: () => houseProvider.setLightMode('MANUAL'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+
+                // 2. Security & Camera Images Tab (Permission Protected)
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (!canViewCameras)
+                        const GlassCard(
+                          child: Padding(
+                            padding: EdgeInsets.all(32),
+                            child: Center(
+                              child: Column(
+                                children: [
+                                  Icon(Icons.no_photography_outlined, color: AppTheme.statusWarning, size: 40),
+                                  SizedBox(height: 12),
+                                  Text('Security Images Restricted', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w700)),
+                                  SizedBox(height: 6),
+                                  Text(
+                                    'You do not have authorization from the homeowner to view security camera snapshots and perimeter logs.',
+                                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )
+                      else ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Lighting Control', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800)),
-                            const SizedBox(height: 16),
-                            CustomBrightnessSlider(
-                              value: house.globalBrightness,
-                              onChanged: (val) => houseProvider.setBrightness(val.round()),
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: ElevatedButton.icon(
-                                    icon: const Icon(Icons.auto_mode_rounded, size: 16),
-                                    label: const Text('Auto (LDR)'),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: house.lightMode == 'AUTO' ? AppTheme.accentBlue : AppTheme.primarySurface,
-                                    ),
-                                    onPressed: () => houseProvider.setLightMode('AUTO'),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: ElevatedButton.icon(
-                                    icon: const Icon(Icons.tune_rounded, size: 16),
-                                    label: const Text('Manual'),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: house.lightMode == 'MANUAL' ? AppTheme.accentBlue : AppTheme.primarySurface,
-                                    ),
-                                    onPressed: () => houseProvider.setLightMode('MANUAL'),
-                                  ),
-                                ),
-                              ],
-                            ),
+                            const Text('Camera Snapshots Gallery', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800)),
+                            Text('${snapshotEvents.length} snapshots', style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)),
                           ],
                         ),
-                      ),
+                        const SizedBox(height: 14),
+
+                        if (snapshotEvents.isEmpty)
+                          const GlassCard(
+                            child: Padding(
+                              padding: EdgeInsets.all(28),
+                              child: Center(
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.camera_alt_outlined, color: AppTheme.textMuted, size: 36),
+                                    SizedBox(height: 10),
+                                    Text('No Images Captured Yet', style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700)),
+                                    Text('Snapshots will appear when security sensors trigger.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 10,
+                              mainAxisSpacing: 10,
+                              childAspectRatio: 0.82,
+                            ),
+                            itemCount: snapshotEvents.length,
+                            itemBuilder: (ctx, i) {
+                              final e = snapshotEvents[i];
+                              final timeStr = DateFormat('MMM d, HH:mm').format(e.createdAt);
+
+                              return GlassCard(
+                                padding: EdgeInsets.zero,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    Expanded(
+                                      child: ClipRRect(
+                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                                        child: Image.network(
+                                          e.imageUrl!,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => Container(
+                                            color: AppTheme.primarySurface,
+                                            child: const Icon(Icons.broken_image_rounded, color: AppTheme.textMuted),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.all(8.0),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            e.eventType.replaceAll('_', ' '),
+                                            style: const TextStyle(color: AppTheme.textLight, fontSize: 11, fontWeight: FontWeight.w700),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          Text(timeStr, style: const TextStyle(color: AppTheme.textMuted, fontSize: 10)),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                      ],
                     ],
                   ),
                 ),
@@ -257,6 +392,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                 items: const [
                   BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
                   BottomNavigationBarItem(icon: Icon(Icons.lightbulb_rounded), label: 'Lighting'),
+                  BottomNavigationBarItem(icon: Icon(Icons.security_rounded), label: 'Security & Images'),
                 ],
               ),
             ),

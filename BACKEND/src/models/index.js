@@ -96,8 +96,12 @@ Notification.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
 User.hasMany(ActivityLog, { foreignKey: 'user_id', as: 'activityLogs', onDelete: 'SET NULL' });
 ActivityLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
-House.hasMany(ActivityLog, { foreignKey: 'house_id', as: 'houseActivityLogs', onDelete: 'SET NULL' });
-ActivityLog.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
+const DeviceOrder = require('./DeviceOrder');
+
+// Device Orders
+House.hasMany(DeviceOrder, { foreignKey: 'house_id', as: 'deviceOrders', onDelete: 'CASCADE' });
+DeviceOrder.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
+DeviceOrder.belongsTo(Homeowner, { foreignKey: 'homeowner_id', as: 'homeowner' });
 
 module.exports = {
   sequelize,
@@ -108,6 +112,7 @@ module.exports = {
   House,
   Permission,
   Device,
+  DeviceOrder,
   Camera,
   MotionSensor,
   LightSensor,
