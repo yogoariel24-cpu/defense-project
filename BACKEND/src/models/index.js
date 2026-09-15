@@ -97,11 +97,22 @@ User.hasMany(ActivityLog, { foreignKey: 'user_id', as: 'activityLogs', onDelete:
 ActivityLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 const DeviceOrder = require('./DeviceOrder');
+const DetectionEvent = require('./DetectionEvent');
 
 // Device Orders
 House.hasMany(DeviceOrder, { foreignKey: 'house_id', as: 'deviceOrders', onDelete: 'CASCADE' });
 DeviceOrder.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
 DeviceOrder.belongsTo(Homeowner, { foreignKey: 'homeowner_id', as: 'homeowner' });
+
+// Detection Events (YOLO + OpenCV Real-time Ingestion)
+House.hasMany(DetectionEvent, { foreignKey: 'house_id', as: 'detectionEvents', onDelete: 'CASCADE' });
+DetectionEvent.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
+
+Camera.hasMany(DetectionEvent, { foreignKey: 'camera_id', as: 'detections', onDelete: 'SET NULL' });
+DetectionEvent.belongsTo(Camera, { foreignKey: 'camera_id', as: 'camera' });
+
+SecurityEvent.hasOne(DetectionEvent, { foreignKey: 'security_event_id', as: 'detectionEvent', onDelete: 'SET NULL' });
+DetectionEvent.belongsTo(SecurityEvent, { foreignKey: 'security_event_id', as: 'securityEvent' });
 
 module.exports = {
   sequelize,
@@ -118,6 +129,7 @@ module.exports = {
   LightSensor,
   SmartLight,
   SecurityEvent,
+  DetectionEvent,
   AIAnalysis,
   FaceProfile,
   Notification,

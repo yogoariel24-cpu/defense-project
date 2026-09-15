@@ -1,6 +1,11 @@
-const { House, SecurityEvent, AIAnalysis, Camera, MotionSensor, FaceProfile } = require('../models');
-const { processVisionTelemetry } = require('../services/aiVisionEngine');
+const { House, SecurityEvent, AIAnalysis, Camera, MotionSensor, FaceProfile, DetectionEvent, Resident, User, Notification } = require('../models');
+const { processVisionTelemetry, calculateFaceDistance } = require('../services/aiVisionEngine');
+const { dispatchEmergency } = require('../services/emergencyService');
+const { sendUnrecognizedFaceAlert } = require('../services/emailService');
 
+/**
+ * Retrieves the security status, devices, and recent events for the caller's house.
+ */
 const getSecurityStatus = async (req, res, next) => {
   try {
     const houseId = req.targetHouseId;
@@ -10,9 +15,18 @@ const getSecurityStatus = async (req, res, next) => {
 
     const recentEvents = await SecurityEvent.findAll({
       where: { house_id: houseId },
-      include: [{ model: AIAnalysis, as: 'aiAnalysis' }],
-      limit: 20,
+      include: [
+        { model: AIAnalysis, as: 'aiAnalysis' },
+        { model: DetectionEvent, as: 'detectionEvent' },
+      ],
+      limit: 30,
       order: [['created_at', 'DESC']],
+    });
+
+    const recentDetections = await DetectionEvent.findAll({
+      where: { house_id: houseId },
+      limit: 20,
+      order: [['timestamp', 'DESC']],
     });
 
     const cameras = await Camera.findAll({ where: { house_id: houseId } });
@@ -25,6 +39,7 @@ const getSecurityStatus = async (req, res, next) => {
         securityStatus: house?.security_status,
         lastChangedAt: house?.last_security_change_at,
         recentEvents,
+        recentDetections,
         cameras,
         motionSensors,
       },
@@ -34,10 +49,13 @@ const getSecurityStatus = async (req, res, next) => {
   }
 };
 
+/**
+ * Changes house security state (DISARMED, ARMED_AWAY, ARMED_HOME).
+ */
 const setSecurityState = async (req, res, next) => {
   try {
     const houseId = req.targetHouseId;
-    const { status } = req.body; // 'DISARMED', 'ARMED_AWAY', 'ARMED_HOME'
+    const { status } = req.body;
 
     if (!['DISARMED', 'ARMED_AWAY', 'ARMED_HOME'].includes(status)) {
       return res.status(400).json({ success: false, message: 'Invalid security state.' });
@@ -80,60 +98,218 @@ const setSecurityState = async (req, res, next) => {
 };
 
 /**
- * Endpoint called by ESP32 / ESP32-CAM or Test Simulator when motion or capture occurs.
- * Runs OpenCV Facial Recognition & Multi-Class Object Recognition (Human vs Animal vs Vehicle).
+ * Real-time AI Ingestion endpoint called by the Python YOLO + OpenCV AI Service.
+ * Evaluates object classification, runs authorization checks against registered house residents,
+ * calculates threat status, stores DetectionEvent, and broadcasts real-time alerts.
  */
-const reportSensorOrCameraCapture = async (req, res, next) => {
+const ingestDetection = async (req, res, next) => {
   try {
     const houseId = req.targetHouseId || req.body.house_id;
     const {
-      device_id,
-      event_type = 'MOTION_DETECTED',
-      detected_object = 'person', // 'person', 'dog', 'cat', 'car', etc.
-      object_confidence = 0.95,
-      has_face = true,
-      face_confidence = 0.91,
+      camera_id = null,
+      camera_name = 'AI Surveillance Camera',
+      object_type = 'person',
+      class_name = 'person',
+      confidence = 0.90,
+      bounding_box = null,
+      has_face = false,
+      face_confidence = 0.0,
       face_embedding = null,
-      camera_name = 'Perimeter Camera',
-      image_url,
+      snapshot_data = null,
+      timestamp = new Date(),
     } = req.body;
 
-    const securityEvent = await SecurityEvent.create({
-      house_id: houseId,
-      device_id,
-      event_type,
-      severity: 'MEDIUM',
-      image_url: image_url || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=600',
-      description: `Telemetry trigger: ${event_type} (${detected_object}) detected. AI Vision evaluation running.`,
-      status: 'INVESTIGATING',
+    if (!houseId) {
+      return res.status(400).json({ success: false, message: 'house_id is required.' });
+    }
+
+    const house = await House.findByPk(houseId, {
+      include: [{ model: require('../models').Homeowner, as: 'homeowner', include: [{ model: User, as: 'user' }] }],
     });
 
+    if (!house) {
+      return res.status(404).json({ success: false, message: `House '${houseId}' not found.` });
+    }
+
+    const isArmed = house.security_status === 'ARMED_AWAY' || house.security_status === 'ARMED_HOME';
+    const currentHour = new Date().getHours();
+    const isNightTime = currentHour >= 22 || currentHour <= 5;
+
+    // --- Threat Evaluation Pipeline ---
+    let eventStatus = 'DETECTED';
+    let threatLevel = 'NORMAL';
+    let matchedResident = null;
+    let isAuthorized = false;
+
+    if (object_type === 'animal') {
+      // Animals are harmless movement -> Filter false alarms
+      eventStatus = 'NORMAL';
+      threatLevel = 'NORMAL';
+    } else if (object_type === 'vehicle') {
+      eventStatus = (isArmed && isNightTime) ? 'SUSPICIOUS' : 'NORMAL';
+      threatLevel = (isArmed && isNightTime) ? 'SUSPICIOUS' : 'NORMAL';
+    } else if (object_type === 'person') {
+      // Check face authorization against registered residents
+      const registeredProfiles = await FaceProfile.findAll({
+        where: { house_id: houseId, is_active: true },
+        include: [{ model: Resident, as: 'resident', include: [{ model: User, as: 'user' }] }],
+      });
+
+      if (has_face && face_embedding && registeredProfiles.length > 0) {
+        for (const profile of registeredProfiles) {
+          if (profile.face_embedding) {
+            try {
+              const regVec = JSON.parse(profile.face_embedding);
+              const dist = calculateFaceDistance(face_embedding, regVec);
+              if (dist < 0.45) {
+                isAuthorized = true;
+                matchedResident = profile.resident?.user;
+                break;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+
+      if (isAuthorized) {
+        eventStatus = 'NORMAL';
+        threatLevel = 'NORMAL';
+      } else {
+        // Unknown person detected!
+        if (isArmed) {
+          // Armed house + Unknown person -> Verified Threat!
+          eventStatus = 'VERIFIED_THREAT';
+          threatLevel = 'CONFIRMED_THREAT';
+        } else {
+          eventStatus = 'SUSPICIOUS';
+          threatLevel = 'SUSPICIOUS';
+        }
+      }
+    }
+
+    // 1. Persist atomic DetectionEvent
+    const detectionEvent = await DetectionEvent.create({
+      house_id: houseId,
+      camera_id: camera_id,
+      object_type: object_type,
+      class_name: class_name,
+      confidence: confidence,
+      bounding_box: bounding_box,
+      has_face: has_face,
+      face_confidence: face_confidence,
+      status: eventStatus,
+      image_url: snapshot_data,
+      timestamp: timestamp,
+    });
+
+    let securityEvent = null;
     const io = req.app.get('io');
 
-    // Run AI Vision & Object Classification Pipeline
-    const aiResult = await processVisionTelemetry({
-      houseId,
-      securityEventId: securityEvent.id,
-      detectedObjectLabel: detected_object,
-      objectConfidence: object_confidence,
-      hasFace: has_face,
-      faceConfidence: face_confidence,
-      incomingEmbedding: face_embedding,
-      cameraName: camera_name,
-      imageUrl: securityEvent.image_url,
-      io,
-    });
+    // 2. If threat is suspicious or verified, create SecurityEvent
+    if (eventStatus === 'VERIFIED_THREAT' || eventStatus === 'SUSPICIOUS') {
+      const isCritical = eventStatus === 'VERIFIED_THREAT';
+
+      securityEvent = await SecurityEvent.create({
+        house_id: houseId,
+        device_id: camera_id,
+        event_type: isCritical ? 'INTRUSION_ALARM' : (has_face ? 'UNKNOWN_FACE' : 'MOTION_DETECTED'),
+        severity: isCritical ? 'CRITICAL' : 'HIGH',
+        image_url: snapshot_data,
+        description: isCritical
+          ? `🚨 VERIFIED THREAT: Unknown person detected by ${camera_name} while security was ${house.security_status}!`
+          : `⚠️ Suspicious ${object_type} activity detected by ${camera_name}.`,
+        status: isCritical ? 'CONFIRMED_THREAT' : 'INVESTIGATING',
+      });
+
+      // Link DetectionEvent to SecurityEvent
+      detectionEvent.security_event_id = securityEvent.id;
+      await detectionEvent.save();
+
+      // Create AI Analysis record
+      await AIAnalysis.create({
+        security_event_id: securityEvent.id,
+        house_id: houseId,
+        person_detected: object_type === 'person',
+        person_confidence: confidence,
+        face_detected: has_face,
+        face_confidence: face_confidence,
+        face_recognition_result: isAuthorized ? 'AUTHORIZED' : (has_face ? 'UNKNOWN' : 'NO_FACE'),
+        threat_level: threatLevel,
+        risk_score: isCritical ? 92.0 : 55.0,
+        raw_details: {
+          class_name,
+          camera_name,
+          bounding_box,
+          eventStatus,
+        },
+      });
+
+      // 3. Emit real-time high-priority alert via Socket.IO
+      if (io) {
+        io.to(`house_${houseId}`).emit('security_threat_alert', {
+          houseId,
+          securityEventId: securityEvent.id,
+          detectionId: detectionEvent.id,
+          status: eventStatus,
+          threatLevel: threatLevel,
+          cameraName: camera_name,
+          objectType: object_type,
+          confidence: confidence,
+          description: securityEvent.description,
+          imageUrl: snapshot_data,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // 4. In-App Notification
+      const homeownerUser = house.homeowner?.user;
+      await Notification.create({
+        house_id: houseId,
+        user_id: homeownerUser?.id || null,
+        type: 'SECURITY_ALERT',
+        title: isCritical ? '🚨 CRITICAL: Intruder Alert' : '⚠️ Suspicious Activity Detected',
+        message: securityEvent.description,
+        data: {
+          security_event_id: securityEvent.id,
+          threat_level: threatLevel,
+          status: eventStatus,
+        },
+      }).catch(() => {});
+
+      // 5. Automatic Emergency escalation if verified threat
+      if (isCritical) {
+        dispatchEmergency({
+          houseId,
+          securityEventId: securityEvent.id,
+          source: 'AUTOMATIC_AI',
+          notes: `YOLO + OpenCV Intrusion Alarm: Unknown person detected by ${camera_name} during ${house.security_status}.`,
+          io,
+        }).catch((err) => console.error('Emergency dispatch error:', err.message));
+      }
+    } else {
+      // Real-time normal detection broadcast (for radar dashboard)
+      if (io) {
+        io.to(`house_${houseId}`).emit('detection_event', {
+          houseId,
+          detectionId: detectionEvent.id,
+          objectType: object_type,
+          className: class_name,
+          confidence,
+          status: eventStatus,
+          timestamp: detectionEvent.timestamp,
+        });
+      }
+    }
 
     res.status(201).json({
       success: true,
-      message: 'Telemetry received and evaluated by Vigilis AI Vision Engine.',
+      message: 'Detection event evaluated and recorded.',
       data: {
+        detectionEvent,
         securityEvent,
-        aiAnalysis: aiResult.aiRecord,
-        objectCategory: aiResult.objectCategory,
-        faceMatchResult: aiResult.matchResult,
-        threatLevel: aiResult.threatLevel,
-        riskScore: aiResult.riskScore,
+        eventStatus,
+        threatLevel,
+        isAuthorized,
       },
     });
   } catch (error) {
@@ -141,4 +317,183 @@ const reportSensorOrCameraCapture = async (req, res, next) => {
   }
 };
 
-module.exports = { getSecurityStatus, setSecurityState, reportSensorOrCameraCapture };
+/**
+ * Retrieves detection events for the caller's house (House-isolated).
+ */
+const getDetectionEvents = async (req, res, next) => {
+  try {
+    const houseId = req.targetHouseId;
+    const { limit = 50, object_type, status } = req.query;
+
+    const where = { house_id: houseId };
+    if (object_type) where.object_type = object_type;
+    if (status) where.status = status;
+
+    const detections = await DetectionEvent.findAll({
+      where,
+      limit: parseInt(limit, 10),
+      order: [['timestamp', 'DESC']],
+      include: [{ model: Camera, as: 'camera', attributes: ['id', 'location_name', 'stream_url'] }],
+    });
+
+    res.status(200).json({
+      success: true,
+      data: { detections },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Retrieves all security events for the caller's house (House-isolated).
+ */
+const getSecurityEvents = async (req, res, next) => {
+  try {
+    const houseId = req.targetHouseId;
+    const { status, severity, limit = 50 } = req.query;
+
+    const where = { house_id: houseId };
+    if (status) where.status = status;
+    if (severity) where.severity = severity;
+
+    const events = await SecurityEvent.findAll({
+      where,
+      include: [
+        { model: AIAnalysis, as: 'aiAnalysis' },
+        { model: DetectionEvent, as: 'detectionEvent' },
+      ],
+      limit: parseInt(limit, 10),
+      order: [['created_at', 'DESC']],
+    });
+
+    res.status(200).json({
+      success: true,
+      data: { events },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Retrieves a single security event by ID (Verifying house isolation).
+ */
+const getSecurityEventById = async (req, res, next) => {
+  try {
+    const houseId = req.targetHouseId;
+    const { id } = req.params;
+
+    const event = await SecurityEvent.findOne({
+      where: { id, house_id: houseId },
+      include: [
+        { model: AIAnalysis, as: 'aiAnalysis' },
+        { model: DetectionEvent, as: 'detectionEvent' },
+      ],
+    });
+
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Security event not found or access denied.' });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: { event },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Retrieves security events for a specific camera in the authorized house.
+ */
+const getEventsByCamera = async (req, res, next) => {
+  try {
+    const houseId = req.targetHouseId;
+    const { cameraId } = req.params;
+
+    // Verify camera belongs to this house
+    const camera = await Camera.findOne({ where: { id: cameraId, house_id: houseId } });
+    if (!camera) {
+      return res.status(404).json({ success: false, message: 'Camera not found or does not belong to your house.' });
+    }
+
+    const events = await SecurityEvent.findAll({
+      where: { house_id: houseId, device_id: cameraId },
+      include: [{ model: AIAnalysis, as: 'aiAnalysis' }],
+      order: [['created_at', 'DESC']],
+      limit: 30,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: { camera, events },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Updates the status of a security event (e.g. RESOLVED, FALSE_ALARM, INVESTIGATING).
+ */
+const updateSecurityEventStatus = async (req, res, next) => {
+  try {
+    const houseId = req.targetHouseId;
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!['LOGGED', 'INVESTIGATING', 'CONFIRMED_THREAT', 'FALSE_ALARM', 'RESOLVED'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status value.' });
+    }
+
+    const event = await SecurityEvent.findOne({ where: { id, house_id: houseId } });
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Security event not found or access denied.' });
+    }
+
+    event.status = status;
+    if (status === 'RESOLVED') {
+      event.resolved_at = new Date();
+    }
+    await event.save();
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`house_${houseId}`).emit('security_event_updated', {
+        houseId,
+        eventId: event.id,
+        status: event.status,
+        updatedBy: `${req.user.first_name} ${req.user.last_name}`,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Security event marked as ${status}.`,
+      data: { event },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Legacy telemetry handler preserved for hardware backward compatibility.
+ */
+const reportSensorOrCameraCapture = async (req, res, next) => {
+  return ingestDetection(req, res, next);
+};
+
+module.exports = {
+  getSecurityStatus,
+  setSecurityState,
+  ingestDetection,
+  getDetectionEvents,
+  getSecurityEvents,
+  getSecurityEventById,
+  getEventsByCamera,
+  updateSecurityEventStatus,
+  reportSensorOrCameraCapture,
+};

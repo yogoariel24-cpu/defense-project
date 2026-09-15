@@ -200,6 +200,46 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> getDetectionEvents({int limit = 50, String? objectType, String? status}) async {
+    try {
+      final queryParams = <String, String>{
+        'limit': limit.toString(),
+        if (objectType != null) 'object_type': objectType,
+        if (status != null) 'status': status,
+      };
+      final uri = Uri.parse('$baseUrl/security/detections').replace(queryParameters: queryParams);
+      final response = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 6));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to fetch detection events'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getSecurityEventDetails(String eventId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/security/events/$eventId'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 6));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to fetch event details'};
+    }
+  }
+
+  Future<Map<String, dynamic>> updateSecurityEventStatus(String eventId, String status) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/security/events/$eventId/status'),
+        headers: _headers,
+        body: jsonEncode({'status': status}),
+      ).timeout(const Duration(seconds: 6));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to update event status'};
+    }
+  }
+
   // --- Emergency Endpoints ---
   Future<Map<String, dynamic>> triggerEmergency(String notes) async {
     try {

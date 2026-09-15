@@ -394,6 +394,50 @@
 					"response": []
 				},
 				{
+					"name": "Ingest YOLO + OpenCV Detection",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "x-ai-service-key",
+								"value": "vigilis_ai_secret_key_2026"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"house_id\": \"HS-9982\",\n    \"camera_name\": \"Front Porch Camera\",\n    \"object_type\": \"person\",\n    \"class_name\": \"person\",\n    \"confidence\": 0.94,\n    \"bounding_box\": {\"x\": 0.35, \"y\": 0.20, \"w\": 0.30, \"h\": 0.60},\n    \"has_face\": true,\n    \"face_confidence\": 0.91\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/security/detections",
+							"host": ["{{base_url}}"],
+							"path": ["api", "security", "detections"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get AI Radar Detection Events",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{homeowner_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/security/detections",
+							"host": ["{{base_url}}"],
+							"path": ["api", "security", "detections"]
+						}
+					},
+					"response": []
+				},
+				{
 					"name": "Arm House Perimeter Security",
 					"request": {
 						"method": "POST",

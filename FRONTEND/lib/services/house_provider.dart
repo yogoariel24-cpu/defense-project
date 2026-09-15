@@ -4,6 +4,7 @@ import '../models/house_model.dart';
 import '../models/device_model.dart';
 import '../models/security_event_model.dart';
 import '../models/resident_model.dart';
+import '../models/detection_event_model.dart';
 import 'api_service.dart';
 
 class HouseProvider extends ChangeNotifier {
@@ -12,6 +13,7 @@ class HouseProvider extends ChangeNotifier {
   HouseModel? _house;
   List<DeviceModel> _devices = [];
   List<SecurityEventModel> _securityEvents = [];
+  List<DetectionEventModel> _detectionEvents = [];
   List<ResidentModel> _residents = [];
   bool _isLoading = false;
   String? _errorMessage;
@@ -35,6 +37,7 @@ class HouseProvider extends ChangeNotifier {
 
   List<DeviceModel> get devices => _devices;
   List<SecurityEventModel> get securityEvents => _securityEvents;
+  List<DetectionEventModel> get detectionEvents => _detectionEvents;
   List<ResidentModel> get residents => _residents;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
@@ -48,6 +51,7 @@ class HouseProvider extends ChangeNotifier {
       fetchHouseData(),
       fetchDevices(),
       fetchSecurityEvents(),
+      fetchDetectionEvents(),
       fetchResidents(),
     ]);
 
@@ -94,6 +98,30 @@ class HouseProvider extends ChangeNotifier {
     } catch (e) {
       _errorMessage = 'Failed to load security events.';
     }
+  }
+
+  Future<void> fetchDetectionEvents() async {
+    try {
+      final res = await _apiService.getDetectionEvents(limit: 30);
+      if (res['success'] == true && res['data']?['detections'] != null) {
+        final list = res['data']['detections'] as List;
+        _detectionEvents = list.map((d) => DetectionEventModel.fromJson(d)).toList();
+        notifyListeners();
+      }
+    } catch (e) {
+      _errorMessage = 'Failed to load detection events.';
+    }
+  }
+
+  Future<bool> updateSecurityEventStatus(String eventId, String status) async {
+    try {
+      final res = await _apiService.updateSecurityEventStatus(eventId, status);
+      if (res['success'] == true) {
+        await fetchSecurityEvents();
+        return true;
+      }
+    } catch (_) {}
+    return false;
   }
 
   Future<void> fetchResidents() async {
