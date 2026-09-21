@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 class AppTheme {
   // Deep Professional Dark Blue Palette
   static const Color primaryDark = Color(0xFF0A192F);       // Deep Midnight Navy
+  static const Color primaryBackground = Color(0xFF0A192F); // Scaffold Background
   static const Color primaryCard = Color(0xFF172A45);       // Rich Navy Card
   static const Color primarySurface = Color(0xFF0E1E38);    // Surface Container
   static const Color accentBlue = Color(0xFF2563EB);        // Vivid Cobalt Blue
   static const Color accentCyan = Color(0xFF38BDF8);        // Electric Cyan Highlight
+  static const Color accentOrange = Color(0xFFF97316);      // Safety Amber / Keycard Orange
   static const Color accentGlow = Color(0xFF1D4ED8);        // Border Glow
 
   // Status Colors

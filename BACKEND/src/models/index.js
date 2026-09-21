@@ -17,6 +17,10 @@ const FaceProfile = require('./FaceProfile');
 const Notification = require('./Notification');
 const EmergencyEvent = require('./EmergencyEvent');
 const ActivityLog = require('./ActivityLog');
+const Room = require('./Room');
+const RoomPermission = require('./RoomPermission');
+const RfidCard = require('./RfidCard');
+const AccessHistory = require('./AccessHistory');
 
 // User Associations
 User.hasOne(PlatformAdministrator, { foreignKey: 'user_id', as: 'adminProfile', onDelete: 'CASCADE' });
@@ -111,8 +115,41 @@ DetectionEvent.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
 Camera.hasMany(DetectionEvent, { foreignKey: 'camera_id', as: 'detections', onDelete: 'SET NULL' });
 DetectionEvent.belongsTo(Camera, { foreignKey: 'camera_id', as: 'camera' });
 
-SecurityEvent.hasOne(DetectionEvent, { foreignKey: 'security_event_id', as: 'detectionEvent', onDelete: 'SET NULL' });
-DetectionEvent.belongsTo(SecurityEvent, { foreignKey: 'security_event_id', as: 'securityEvent' });
+// Rooms & Room Permissions
+House.hasMany(Room, { foreignKey: 'house_id', as: 'rooms', onDelete: 'CASCADE' });
+Room.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
+
+Room.hasMany(RoomPermission, { foreignKey: 'room_id', as: 'permissions', onDelete: 'CASCADE' });
+RoomPermission.belongsTo(Room, { foreignKey: 'room_id', as: 'room' });
+
+Resident.hasMany(RoomPermission, { foreignKey: 'resident_id', as: 'roomPermissions', onDelete: 'CASCADE' });
+RoomPermission.belongsTo(Resident, { foreignKey: 'resident_id', as: 'resident' });
+
+Room.hasMany(Device, { foreignKey: 'room_id', as: 'devices', onDelete: 'SET NULL' });
+Device.belongsTo(Room, { foreignKey: 'room_id', as: 'room' });
+
+// RFID Cards
+House.hasMany(RfidCard, { foreignKey: 'house_id', as: 'rfidCards', onDelete: 'CASCADE' });
+RfidCard.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
+
+Resident.hasMany(RfidCard, { foreignKey: 'resident_id', as: 'rfidCards', onDelete: 'SET NULL' });
+RfidCard.belongsTo(Resident, { foreignKey: 'resident_id', as: 'resident' });
+
+// Access History
+House.hasMany(AccessHistory, { foreignKey: 'house_id', as: 'accessHistory', onDelete: 'CASCADE' });
+AccessHistory.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
+
+Room.hasMany(AccessHistory, { foreignKey: 'room_id', as: 'accessLogs', onDelete: 'SET NULL' });
+AccessHistory.belongsTo(Room, { foreignKey: 'room_id', as: 'room' });
+
+Resident.hasMany(AccessHistory, { foreignKey: 'resident_id', as: 'accessLogs', onDelete: 'SET NULL' });
+AccessHistory.belongsTo(Resident, { foreignKey: 'resident_id', as: 'resident' });
+
+RfidCard.hasMany(AccessHistory, { foreignKey: 'rfid_card_id', as: 'accessLogs', onDelete: 'SET NULL' });
+AccessHistory.belongsTo(RfidCard, { foreignKey: 'rfid_card_id', as: 'rfidCard' });
+
+Device.hasMany(AccessHistory, { foreignKey: 'device_id', as: 'accessLogs', onDelete: 'SET NULL' });
+AccessHistory.belongsTo(Device, { foreignKey: 'device_id', as: 'device' });
 
 module.exports = {
   sequelize,
@@ -135,4 +172,9 @@ module.exports = {
   Notification,
   EmergencyEvent,
   ActivityLog,
+  Room,
+  RoomPermission,
+  RfidCard,
+  AccessHistory,
 };
+

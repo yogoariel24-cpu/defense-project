@@ -240,6 +240,260 @@ class ApiService {
     }
   }
 
+  // --- Room Management Endpoints ---
+  Future<Map<String, dynamic>> getRooms() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/rooms'), headers: _headers).timeout(const Duration(seconds: 6));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to fetch rooms'};
+    }
+  }
+
+  Future<Map<String, dynamic>> createRoom({
+    required String name,
+    String roomType = 'OTHER',
+    String description = '',
+    bool isRestricted = false,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/rooms'),
+        headers: _headers,
+        body: jsonEncode({
+          'name': name,
+          'room_type': roomType,
+          'description': description,
+          'is_restricted': isRestricted,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to create room'};
+    }
+  }
+
+  Future<Map<String, dynamic>> updateRoom(
+    String roomId, {
+    String? name,
+    String? roomType,
+    String? description,
+    bool? isRestricted,
+  }) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/rooms/$roomId'),
+        headers: _headers,
+        body: jsonEncode({
+          if (name != null) 'name': name,
+          if (roomType != null) 'room_type': roomType,
+          if (description != null) 'description': description,
+          if (isRestricted != null) 'is_restricted': isRestricted,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to update room'};
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteRoom(String roomId) async {
+    try {
+      final response = await http.delete(Uri.parse('$baseUrl/rooms/$roomId'), headers: _headers).timeout(const Duration(seconds: 6));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to delete room'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getRoomPermissions(String roomId) async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/rooms/$roomId/permissions'), headers: _headers).timeout(const Duration(seconds: 6));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to fetch room permissions'};
+    }
+  }
+
+  Future<Map<String, dynamic>> setRoomPermission(
+    String roomId,
+    String residentId, {
+    required bool canAccess,
+    String? scheduleStart,
+    String? scheduleEnd,
+    bool isActive = true,
+  }) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/rooms/$roomId/permissions/$residentId'),
+        headers: _headers,
+        body: jsonEncode({
+          'can_access': canAccess,
+          'schedule_start': scheduleStart,
+          'schedule_end': scheduleEnd,
+          'is_active': isActive,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to update room permission'};
+    }
+  }
+
+  // --- RFID Management Endpoints ---
+  Future<Map<String, dynamic>> getRfidCards() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/rfid'), headers: _headers).timeout(const Duration(seconds: 6));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to fetch RFID cards'};
+    }
+  }
+
+  Future<Map<String, dynamic>> registerRfidCard({
+    required String cardUid,
+    required String label,
+    String? residentId,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/rfid'),
+        headers: _headers,
+        body: jsonEncode({
+          'card_uid': cardUid,
+          'label': label,
+          'resident_id': residentId,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to register RFID card'};
+    }
+  }
+
+  Future<Map<String, dynamic>> updateRfidCard(
+    String cardId, {
+    String? label,
+    String? residentId,
+    String? status,
+  }) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/rfid/$cardId'),
+        headers: _headers,
+        body: jsonEncode({
+          if (label != null) 'label': label,
+          'resident_id': residentId,
+          if (status != null) 'status': status,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to update RFID card'};
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteRfidCard(String cardId) async {
+    try {
+      final response = await http.delete(Uri.parse('$baseUrl/rfid/$cardId'), headers: _headers).timeout(const Duration(seconds: 6));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to delete RFID card'};
+    }
+  }
+
+  // --- Access History / Audit Log Endpoints ---
+  Future<Map<String, dynamic>> getAccessHistory({
+    String? roomId,
+    String? residentId,
+    String? accessMethod,
+    String? status,
+    int limit = 50,
+  }) async {
+    try {
+      final queryParams = <String, String>{
+        'limit': limit.toString(),
+        if (roomId != null) 'room_id': roomId,
+        if (residentId != null) 'resident_id': residentId,
+        if (accessMethod != null) 'access_method': accessMethod,
+        if (status != null) 'status': status,
+      };
+      final uri = Uri.parse('$baseUrl/access-history').replace(queryParameters: queryParams);
+      final response = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 6));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to fetch access history'};
+    }
+  }
+
+  // --- IoT Infrastructure Test Helpers ---
+  Future<Map<String, dynamic>> testRfidAccess({
+    required String cardUid,
+    required String deviceIdentifier,
+    String? roomId,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/iot/access/rfid'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'card_uid': cardUid,
+          'device_identifier': deviceIdentifier,
+          'room_id': roomId,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to test RFID access attempt'};
+    }
+  }
+
+  Future<Map<String, dynamic>> testFaceAccess({
+    required List<double> faceEmbedding,
+    required String deviceIdentifier,
+    String? roomId,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/iot/access/face'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'face_embedding': faceEmbedding,
+          'device_identifier': deviceIdentifier,
+          'room_id': roomId,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to test Face embedding access'};
+    }
+  }
+
+  Future<Map<String, dynamic>> testIotEvent({
+    required String deviceIdentifier,
+    required String eventType,
+    String? roomId,
+    bool isVerifiedThreat = false,
+    String severity = 'LOW',
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/iot/events'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'device_identifier': deviceIdentifier,
+          'event_type': eventType,
+          'room_id': roomId,
+          'is_verified_threat': isVerifiedThreat,
+          'severity': severity,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to test IoT event'};
+    }
+  }
+
   // --- Emergency Endpoints ---
   Future<Map<String, dynamic>> triggerEmergency(String notes) async {
     try {

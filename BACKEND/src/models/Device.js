@@ -11,18 +11,34 @@ const Device = sequelize.define('devices', {
     type: DataTypes.STRING(32),
     allowNull: false,
   },
+  room_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    comment: 'Associated room in the house if assigned',
+  },
   device_identifier: {
     type: DataTypes.STRING,
     allowNull: false,
     unique: true,
-    comment: 'e.g. ESP32_MAIN_01 or CAM_FRONT_01',
+    comment: 'e.g. ESP32_MAIN_01, RFID_DOOR_01, CAM_FRONT_01',
   },
   name: {
     type: DataTypes.STRING,
     allowNull: false,
   },
   type: {
-    type: DataTypes.ENUM('ESP32', 'ESP32_CAM', 'MOTION_SENSOR', 'LIGHT_SENSOR', 'SMART_LIGHT', 'RELAY', 'CAMERA'),
+    type: DataTypes.ENUM(
+      'ESP32',
+      'ESP32_CAM',
+      'MOTION_SENSOR',
+      'LIGHT_SENSOR',
+      'SMART_LIGHT',
+      'RELAY',
+      'CAMERA',
+      'RFID_READER',
+      'PRESENCE_SENSOR',
+      'DOOR_LOCK'
+    ),
     allowNull: false,
   },
   status: {

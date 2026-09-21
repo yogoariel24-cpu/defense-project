@@ -1,10 +1,30 @@
-const { House, SecurityEvent, AIAnalysis, Camera, MotionSensor, FaceProfile, DetectionEvent, Resident, User, Notification } = require('../models');
+const {
+  House,
+  SecurityEvent,
+  AIAnalysis,
+  Camera,
+  MotionSensor,
+  FaceProfile,
+  DetectionEvent,
+  Resident,
+  User,
+  Notification,
+  Device,
+  AccessHistory,
+  Room,
+  RfidCard,
+} = require('../models');
 const { processVisionTelemetry, calculateFaceDistance } = require('../services/aiVisionEngine');
 const { dispatchEmergency } = require('../services/emergencyService');
 const { sendUnrecognizedFaceAlert } = require('../services/emailService');
 
 /**
- * Retrieves the security status, devices, and recent events for the caller's house.
+ * Retrieves the comprehensive security status:
+ * - Security state (Armed/Disarmed)
+ * - Device status summary (online/offline counts broken down by type)
+ * - Recent RFID and Face access attempts
+ * - Recent detections (Detection != Verified Threat)
+ * - Security events & active threat status
  */
 const getSecurityStatus = async (req, res, next) => {
   try {
@@ -13,6 +33,7 @@ const getSecurityStatus = async (req, res, next) => {
       attributes: ['id', 'name', 'security_status', 'last_security_change_at'],
     });
 
+    // Recent security events
     const recentEvents = await SecurityEvent.findAll({
       where: { house_id: houseId },
       include: [
@@ -23,14 +44,56 @@ const getSecurityStatus = async (req, res, next) => {
       order: [['created_at', 'DESC']],
     });
 
+    // Recent detections (Detections != Verified Threats)
     const recentDetections = await DetectionEvent.findAll({
       where: { house_id: houseId },
       limit: 20,
       order: [['timestamp', 'DESC']],
     });
 
-    const cameras = await Camera.findAll({ where: { house_id: houseId } });
-    const motionSensors = await MotionSensor.findAll({ where: { house_id: houseId } });
+    // Devices & Device Status Summary
+    const devices = await Device.findAll({
+      where: { house_id: houseId },
+      include: [{ model: Room, as: 'room', attributes: ['id', 'name'] }],
+      order: [['name', 'ASC']],
+    });
+
+    const deviceSummary = {
+      total: devices.length,
+      online: devices.filter((d) => d.status === 'ONLINE').length,
+      offline: devices.filter((d) => d.status === 'OFFLINE').length,
+      byType: {
+        CAMERA: devices.filter((d) => d.type === 'CAMERA' || d.type === 'ESP32_CAM').length,
+        RFID_READER: devices.filter((d) => d.type === 'RFID_READER').length,
+        DOOR_LOCK: devices.filter((d) => d.type === 'DOOR_LOCK').length,
+        PRESENCE_SENSOR: devices.filter((d) => d.type === 'PRESENCE_SENSOR' || d.type === 'MOTION_SENSOR').length,
+        LIGHT: devices.filter((d) => d.type === 'SMART_LIGHT').length,
+      },
+    };
+
+    // Recent RFID and Face Access Attempts
+    const recentAccess = await AccessHistory.findAll({
+      where: { house_id: houseId },
+      limit: 15,
+      order: [['timestamp', 'DESC']],
+      include: [
+        { model: Room, as: 'room', attributes: ['id', 'name'] },
+        {
+          model: Resident,
+          as: 'resident',
+          include: [{ model: User, as: 'user', attributes: ['id', 'first_name', 'last_name'] }],
+        },
+        { model: RfidCard, as: 'rfidCard', attributes: ['id', 'card_uid', 'label'] },
+      ],
+    });
+
+    // Active Threat Status: Check if any unconfirmed threat or verified threat exists
+    const activeThreatEvent = recentEvents.find(
+      (e) => e.status === 'CONFIRMED_THREAT' || e.status === 'INVESTIGATING'
+    );
+    const threatStatus = activeThreatEvent
+      ? (activeThreatEvent.status === 'CONFIRMED_THREAT' ? 'VERIFIED_THREAT' : 'SUSPICIOUS')
+      : 'NORMAL';
 
     res.status(200).json({
       success: true,
@@ -38,10 +101,13 @@ const getSecurityStatus = async (req, res, next) => {
         houseId: house?.id,
         securityStatus: house?.security_status,
         lastChangedAt: house?.last_security_change_at,
+        threatStatus,
+        activeThreat: activeThreatEvent || null,
+        deviceSummary,
+        devices,
+        recentAccess,
         recentEvents,
         recentDetections,
-        cameras,
-        motionSensors,
       },
     });
   } catch (error) {
@@ -497,3 +563,4 @@ module.exports = {
   updateSecurityEventStatus,
   reportSensorOrCameraCapture,
 };
+

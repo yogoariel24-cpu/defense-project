@@ -21,6 +21,14 @@ class ResidentModel {
     this.facePhotoUrl,
   });
 
+  String get fullName {
+    if (user != null) {
+      final name = '${user!.firstName} ${user!.lastName}'.trim();
+      if (name.isNotEmpty) return name;
+    }
+    return 'Resident';
+  }
+
   factory ResidentModel.fromJson(Map<String, dynamic> json) {
     return ResidentModel(
       id: json['id'] ?? '',

@@ -5,6 +5,9 @@ import '../models/device_model.dart';
 import '../models/security_event_model.dart';
 import '../models/resident_model.dart';
 import '../models/detection_event_model.dart';
+import '../models/room_model.dart';
+import '../models/rfid_card_model.dart';
+import '../models/access_history_model.dart';
 import 'api_service.dart';
 
 class HouseProvider extends ChangeNotifier {
@@ -15,12 +18,17 @@ class HouseProvider extends ChangeNotifier {
   List<SecurityEventModel> _securityEvents = [];
   List<DetectionEventModel> _detectionEvents = [];
   List<ResidentModel> _residents = [];
+  List<RoomModel> _rooms = [];
+  List<RfidCardModel> _rfidCards = [];
+  List<AccessHistoryModel> _accessHistory = [];
+  Map<String, dynamic> _deviceSummary = {};
+  String _threatStatus = 'NORMAL';
+  SecurityEventModel? _activeThreat;
+
   bool _isLoading = false;
   String? _errorMessage;
 
-  HouseProvider(this._apiService) {
-    refreshAll();
-  }
+  HouseProvider(this._apiService);
 
   HouseModel get house =>
       _house ??
@@ -39,6 +47,13 @@ class HouseProvider extends ChangeNotifier {
   List<SecurityEventModel> get securityEvents => _securityEvents;
   List<DetectionEventModel> get detectionEvents => _detectionEvents;
   List<ResidentModel> get residents => _residents;
+  List<RoomModel> get rooms => _rooms;
+  List<RfidCardModel> get rfidCards => _rfidCards;
+  List<AccessHistoryModel> get accessHistory => _accessHistory;
+  Map<String, dynamic> get deviceSummary => _deviceSummary;
+  String get threatStatus => _threatStatus;
+  SecurityEventModel? get activeThreat => _activeThreat;
+
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
@@ -50,9 +65,12 @@ class HouseProvider extends ChangeNotifier {
     await Future.wait([
       fetchHouseData(),
       fetchDevices(),
-      fetchSecurityEvents(),
+      fetchSecurityStatus(),
       fetchDetectionEvents(),
       fetchResidents(),
+      fetchRooms(),
+      fetchRfidCards(),
+      fetchAccessHistory(),
     ]);
 
     _isLoading = false;
@@ -84,20 +102,52 @@ class HouseProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchSecurityEvents() async {
+  Future<void> fetchSecurityStatus() async {
     try {
       final res = await _apiService.getSecurityStatus();
-      if (res['success'] == true && res['data']?['recentEvents'] != null) {
-        final list = res['data']['recentEvents'] as List;
-        _securityEvents = list.map((e) => SecurityEventModel.fromJson(e)).toList();
-        if (res['data']['securityStatus'] != null && _house != null) {
-          _house = _house!.copyWith(securityStatus: res['data']['securityStatus']);
+      if (res['success'] == true && res['data'] != null) {
+        final data = res['data'];
+
+        if (data['securityStatus'] != null && _house != null) {
+          _house = _house!.copyWith(securityStatus: data['securityStatus']);
         }
+
+        if (data['recentEvents'] != null) {
+          final list = data['recentEvents'] as List;
+          _securityEvents = list.map((e) => SecurityEventModel.fromJson(e)).toList();
+        }
+
+        if (data['recentDetections'] != null) {
+          final list = data['recentDetections'] as List;
+          _detectionEvents = list.map((d) => DetectionEventModel.fromJson(d)).toList();
+        }
+
+        if (data['recentAccess'] != null) {
+          final list = data['recentAccess'] as List;
+          _accessHistory = list.map((a) => AccessHistoryModel.fromJson(a)).toList();
+        }
+
+        if (data['deviceSummary'] != null) {
+          _deviceSummary = Map<String, dynamic>.from(data['deviceSummary']);
+        }
+
+        _threatStatus = data['threatStatus'] ?? 'NORMAL';
+
+        if (data['activeThreat'] != null) {
+          _activeThreat = SecurityEventModel.fromJson(data['activeThreat']);
+        } else {
+          _activeThreat = null;
+        }
+
         notifyListeners();
       }
     } catch (e) {
-      _errorMessage = 'Failed to load security events.';
+      _errorMessage = 'Failed to load security status.';
     }
+  }
+
+  Future<void> fetchSecurityEvents() async {
+    await fetchSecurityStatus();
   }
 
   Future<void> fetchDetectionEvents() async {
@@ -117,7 +167,7 @@ class HouseProvider extends ChangeNotifier {
     try {
       final res = await _apiService.updateSecurityEventStatus(eventId, status);
       if (res['success'] == true) {
-        await fetchSecurityEvents();
+        await fetchSecurityStatus();
         return true;
       }
     } catch (_) {}
@@ -137,13 +187,178 @@ class HouseProvider extends ChangeNotifier {
     }
   }
 
+  // --- Room Management Methods ---
+  Future<void> fetchRooms() async {
+    try {
+      final res = await _apiService.getRooms();
+      if (res['success'] == true && res['data']?['rooms'] != null) {
+        final list = res['data']['rooms'] as List;
+        _rooms = list.map((r) => RoomModel.fromJson(r)).toList();
+        notifyListeners();
+      }
+    } catch (e) {
+      _errorMessage = 'Failed to load rooms.';
+    }
+  }
+
+  Future<bool> createRoom({
+    required String name,
+    String roomType = 'OTHER',
+    String description = '',
+    bool isRestricted = false,
+  }) async {
+    final res = await _apiService.createRoom(
+      name: name,
+      roomType: roomType,
+      description: description,
+      isRestricted: isRestricted,
+    );
+    if (res['success'] == true) {
+      await fetchRooms();
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> updateRoom(
+    String roomId, {
+    String? name,
+    String? roomType,
+    String? description,
+    bool? isRestricted,
+  }) async {
+    final res = await _apiService.updateRoom(
+      roomId,
+      name: name,
+      roomType: roomType,
+      description: description,
+      isRestricted: isRestricted,
+    );
+    if (res['success'] == true) {
+      await fetchRooms();
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> deleteRoom(String roomId) async {
+    final res = await _apiService.deleteRoom(roomId);
+    if (res['success'] == true) {
+      await fetchRooms();
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> setRoomPermission(
+    String roomId,
+    String residentId, {
+    required bool canAccess,
+    String? scheduleStart,
+    String? scheduleEnd,
+    bool isActive = true,
+  }) async {
+    final res = await _apiService.setRoomPermission(
+      roomId,
+      residentId,
+      canAccess: canAccess,
+      scheduleStart: scheduleStart,
+      scheduleEnd: scheduleEnd,
+      isActive: isActive,
+    );
+    if (res['success'] == true) {
+      await fetchRooms();
+      return true;
+    }
+    return false;
+  }
+
+  // --- RFID Management Methods ---
+  Future<void> fetchRfidCards() async {
+    try {
+      final res = await _apiService.getRfidCards();
+      if (res['success'] == true && res['data']?['cards'] != null) {
+        final list = res['data']['cards'] as List;
+        _rfidCards = list.map((c) => RfidCardModel.fromJson(c)).toList();
+        notifyListeners();
+      }
+    } catch (e) {
+      _errorMessage = 'Failed to load RFID cards.';
+    }
+  }
+
+  Future<bool> registerRfidCard({
+    required String cardUid,
+    required String label,
+    String? residentId,
+  }) async {
+    final res = await _apiService.registerRfidCard(
+      cardUid: cardUid,
+      label: label,
+      residentId: residentId,
+    );
+    if (res['success'] == true) {
+      await fetchRfidCards();
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> updateRfidCard(
+    String cardId, {
+    String? label,
+    String? residentId,
+    String? status,
+  }) async {
+    final res = await _apiService.updateRfidCard(
+      cardId,
+      label: label,
+      residentId: residentId,
+      status: status,
+    );
+    if (res['success'] == true) {
+      await fetchRfidCards();
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> deleteRfidCard(String cardId) async {
+    final res = await _apiService.deleteRfidCard(cardId);
+    if (res['success'] == true) {
+      await fetchRfidCards();
+      return true;
+    }
+    return false;
+  }
+
+  // --- Access History Audit Methods ---
+  Future<void> fetchAccessHistory({String? roomId, String? residentId, String? accessMethod, String? status}) async {
+    try {
+      final res = await _apiService.getAccessHistory(
+        roomId: roomId,
+        residentId: residentId,
+        accessMethod: accessMethod,
+        status: status,
+      );
+      if (res['success'] == true && res['data']?['logs'] != null) {
+        final list = res['data']['logs'] as List;
+        _accessHistory = list.map((a) => AccessHistoryModel.fromJson(a)).toList();
+        notifyListeners();
+      }
+    } catch (e) {
+      _errorMessage = 'Failed to load access history.';
+    }
+  }
+
+  // --- Security State & Actions ---
   Future<bool> setSecurityState(String state) async {
     if (_house != null) {
       _house = _house!.copyWith(securityStatus: state);
       notifyListeners();
     }
     final res = await _apiService.setSecurityState(state);
-    await fetchSecurityEvents();
+    await fetchSecurityStatus();
     return res['success'] == true;
   }
 
@@ -168,7 +383,6 @@ class HouseProvider extends ChangeNotifier {
   }
 
   Future<bool> triggerEmergency({String notes = 'Manual App Trigger'}) async {
-    // Buzz device with haptic alarm feedback
     try {
       HapticFeedback.heavyImpact();
       Future.delayed(const Duration(milliseconds: 250), () => HapticFeedback.heavyImpact());
@@ -181,7 +395,7 @@ class HouseProvider extends ChangeNotifier {
     }
 
     final res = await _apiService.triggerEmergency(notes);
-    await fetchSecurityEvents();
+    await fetchSecurityStatus();
     return res['success'] == true;
   }
 

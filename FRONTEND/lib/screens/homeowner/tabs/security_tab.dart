@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../../services/house_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/glass_card.dart';
 import '../../../widgets/stat_badge.dart';
 import '../../../widgets/emergency_dialog.dart';
 import '../../../models/security_event_model.dart';
-import '../../../models/detection_event_model.dart';
-import 'package:intl/intl.dart';
+import '../room_management_screen.dart';
+import '../rfid_management_screen.dart';
+import '../access_history_screen.dart';
 
 class SecurityTab extends StatefulWidget {
   const SecurityTab({super.key});
@@ -17,96 +19,37 @@ class SecurityTab extends StatefulWidget {
 }
 
 class _SecurityTabState extends State<SecurityTab> {
-  int _viewMode = 0; // 0 = Audit Log, 1 = AI Radar (YOLO Detections), 2 = Snapshots Gallery
-
-  void _showImagePreview(BuildContext context, String imageUrl, String title, String timestamp, SecurityEventModel? event) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: AppTheme.primaryCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              child: Image.network(
-                imageUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 200,
-                  color: AppTheme.primarySurface,
-                  child: const Center(child: Icon(Icons.broken_image_rounded, size: 48, color: AppTheme.textMuted)),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w800, fontSize: 16)),
-                  const SizedBox(height: 4),
-                  Text(timestamp, style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                  if (event?.aiAnalysis != null) ...[
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        _aiChip('Face: ${event!.aiAnalysis!.faceRecognitionResult}', event.aiAnalysis!.faceRecognitionResult == 'UNKNOWN' ? AppTheme.statusDanger : AppTheme.statusSafe),
-                        if (event.aiAnalysis!.personDetected)
-                          _aiChip('Human: ${(event.aiAnalysis!.personConfidence * 100).toStringAsFixed(0)}%', AppTheme.accentCyan),
-                        _aiChip('Risk: ${event.aiAnalysis!.riskScore.toStringAsFixed(0)}%', AppTheme.statusWarning),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 14),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  int _selectedSection = 0; // 0 = Dashboard Overview, 1 = Detections Feed, 2 = Security Events
 
   @override
   Widget build(BuildContext context) {
     final houseProvider = Provider.of<HouseProvider>(context);
     final events = houseProvider.securityEvents;
     final detections = houseProvider.detectionEvents;
+    final accessLogs = houseProvider.accessHistory;
     final isArmed = houseProvider.house.isArmed;
-
-    final snapshotEvents = events.where((e) => e.imageUrl != null && e.imageUrl!.isNotEmpty).toList();
-
-    // Check for active high-priority verified threats
-    final activeThreat = events.cast<SecurityEventModel?>().firstWhere(
-          (e) => e?.status == 'CONFIRMED_THREAT' || e?.aiAnalysis?.threatLevel == 'CONFIRMED_THREAT',
-          orElse: () => null,
-        );
+    final deviceSummary = houseProvider.deviceSummary;
+    final threatStatus = houseProvider.threatStatus;
+    final activeThreat = houseProvider.activeThreat;
 
     return RefreshIndicator(
       onRefresh: () async {
-        await houseProvider.fetchSecurityEvents();
+        await houseProvider.fetchSecurityStatus();
         await houseProvider.fetchDetectionEvents();
+        await houseProvider.fetchAccessHistory();
+        await houseProvider.fetchDevices();
       },
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Active Intrusion Threat Banner (if any)
-            if (activeThreat != null) ...[
+            // 1. High-Priority Verified Threat Banner (When threat reaches VERIFIED_THREAT)
+            if (threatStatus == 'VERIFIED_THREAT' || activeThreat != null) ...[
               GlassCard(
                 borderColor: AppTheme.statusDanger,
-                backgroundColor: AppTheme.statusDanger.withOpacity(0.12),
+                backgroundColor: AppTheme.statusDanger.withOpacity(0.14),
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -114,48 +57,78 @@ class _SecurityTabState extends State<SecurityTab> {
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: const BoxDecoration(color: AppTheme.statusDanger, shape: BoxShape.circle),
-                          child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 22),
+                          padding: const EdgeInsets.all(10),
+                          decoration: const BoxDecoration(
+                            color: AppTheme.statusDanger,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 24),
                         ),
                         const SizedBox(width: 12),
                         const Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('🚨 VERIFIED SECURITY INTRUSION', style: TextStyle(color: AppTheme.statusDanger, fontWeight: FontWeight.w900, fontSize: 14)),
-                              Text('YOLO + OpenCV AI confirmed an unauthorized person breach', style: TextStyle(color: AppTheme.textLight, fontSize: 11)),
+                              Text(
+                                '🚨 VERIFIED SECURITY THREAT',
+                                style: TextStyle(
+                                  color: AppTheme.statusDanger,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Automated security response active — emergency dispatched',
+                                style: TextStyle(color: AppTheme.textLight, fontSize: 11),
+                              ),
                             ],
                           ),
+                        ),
+                        const StatBadge(
+                          label: 'VERIFIED THREAT',
+                          color: AppTheme.statusDanger,
+                          icon: Icons.shield_rounded,
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      activeThreat.description ?? 'Unrecognized subject detected during armed monitoring.',
-                      style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                      activeThreat?.description ?? 'Intruder breach detected while security was armed.',
+                      style: const TextStyle(color: AppTheme.textLight, fontSize: 13),
                     ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            icon: const Icon(Icons.emergency_rounded, size: 16),
-                            label: const Text('DISPATCH POLICE'),
-                            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.statusDanger, foregroundColor: Colors.white),
-                            onPressed: () {
-                              EmergencyDialog.show(
-                                context,
-                                onConfirm: () => houseProvider.triggerEmergency(notes: 'Intrusion threat response confirmed by homeowner'),
-                              );
-                            },
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: AppTheme.statusDanger.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: AppTheme.statusDanger.withOpacity(0.5)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.check_circle_rounded, size: 14, color: AppTheme.statusDanger),
+                              SizedBox(width: 6),
+                              Text(
+                                'Auto-Response Dispatched',
+                                style: TextStyle(color: AppTheme.statusDanger, fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        OutlinedButton(
-                          child: const Text('Resolve'),
-                          onPressed: () => houseProvider.updateSecurityEventStatus(activeThreat.id, 'RESOLVED'),
-                        ),
+                        const Spacer(),
+                        if (activeThreat != null)
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.statusSafe,
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            ),
+                            onPressed: () => houseProvider.updateSecurityEventStatus(activeThreat.id, 'RESOLVED'),
+                            child: const Text('Mark Resolved', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
                       ],
                     ),
                   ],
@@ -164,70 +137,246 @@ class _SecurityTabState extends State<SecurityTab> {
               const SizedBox(height: 16),
             ],
 
-            // Perimeter Status Banner
+            // 2. Security Status & Arm / Disarm Controls
             GlassCard(
-              borderColor: isArmed ? AppTheme.accentCyan.withOpacity(0.4) : AppTheme.statusSafe.withOpacity(0.4),
               padding: const EdgeInsets.all(18),
-              child: Row(
+              borderColor: isArmed ? AppTheme.accentCyan.withOpacity(0.5) : AppTheme.statusSafe.withOpacity(0.5),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: (isArmed ? AppTheme.accentCyan : AppTheme.statusSafe).withOpacity(0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      isArmed ? Icons.shield_rounded : Icons.shield_outlined,
-                      color: isArmed ? AppTheme.accentCyan : AppTheme.statusSafe,
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Perimeter: ${houseProvider.house.securityStatus.replaceAll('_', ' ')}',
-                          style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w800, fontSize: 15),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: (isArmed ? AppTheme.accentCyan : AppTheme.statusSafe).withOpacity(0.15),
+                          shape: BoxShape.circle,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          isArmed ? 'YOLOv8 + OpenCV Edge-AI active' : 'System standby. AI radar ready.',
-                          style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                        child: Icon(
+                          isArmed ? Icons.shield_rounded : Icons.shield_outlined,
+                          color: isArmed ? AppTheme.accentCyan : AppTheme.statusSafe,
+                          size: 26,
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Security Status: ${houseProvider.house.securityStatus.replaceAll('_', ' ')}',
+                              style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              isArmed ? 'Active perimeter & biometric monitoring' : 'Standby mode — access logging active',
+                              style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      StatBadge(
+                        label: isArmed ? 'ARMED' : 'DISARMED',
+                        color: isArmed ? AppTheme.accentCyan : AppTheme.statusSafe,
+                      ),
+                    ],
                   ),
-                  StatBadge(
-                    label: isArmed ? 'ARMED' : 'DISARMED',
-                    color: isArmed ? AppTheme.accentCyan : AppTheme.statusSafe,
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _armButton(
+                          label: 'DISARM',
+                          icon: Icons.lock_open_rounded,
+                          isActive: !isArmed,
+                          activeColor: AppTheme.statusSafe,
+                          onPressed: () => houseProvider.setSecurityState('DISARMED'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _armButton(
+                          label: 'ARM HOME',
+                          icon: Icons.home_rounded,
+                          isActive: houseProvider.house.securityStatus == 'ARMED_HOME',
+                          activeColor: AppTheme.accentOrange,
+                          onPressed: () => houseProvider.setSecurityState('ARMED_HOME'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _armButton(
+                          label: 'ARM AWAY',
+                          icon: Icons.shield_rounded,
+                          isActive: houseProvider.house.securityStatus == 'ARMED_AWAY',
+                          activeColor: AppTheme.accentCyan,
+                          onPressed: () => houseProvider.setSecurityState('ARMED_AWAY'),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 16),
 
-            // View Selector Tabs (Audit Log vs YOLO AI Radar vs Snapshots Gallery)
+            // 3. Hardware Device Status Summary
+            GlassCard(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.devices_rounded, size: 20, color: AppTheme.accentCyan),
+                      const SizedBox(width: 8),
+                      const Text('IoT Device Status', style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.bold, fontSize: 15)),
+                      const Spacer(),
+                      Text(
+                        '${deviceSummary['online'] ?? houseProvider.devices.where((d) => d.status == 'ONLINE').length} Online / ${deviceSummary['total'] ?? houseProvider.devices.length} Total',
+                        style: const TextStyle(color: AppTheme.statusSafe, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      _deviceStatusTile('Cameras', deviceSummary['byType']?['CAMERA']?.toString() ?? '1', Icons.videocam_rounded),
+                      const SizedBox(width: 8),
+                      _deviceStatusTile('RFID Readers', deviceSummary['byType']?['RFID_READER']?.toString() ?? '1', Icons.nfc_rounded),
+                      const SizedBox(width: 8),
+                      _deviceStatusTile('Door Locks', deviceSummary['byType']?['DOOR_LOCK']?.toString() ?? '1', Icons.lock_rounded),
+                      const SizedBox(width: 8),
+                      _deviceStatusTile('Sensors', deviceSummary['byType']?['PRESENCE_SENSOR']?.toString() ?? '2', Icons.sensors_rounded),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // 4. Quick Access Hub (Rooms, RFID Cards, Access Log)
             Row(
               children: [
                 Expanded(
-                  child: _buildViewTab('AUDIT LOG (${events.length})', 0, Icons.list_alt_rounded),
+                  child: _quickNavCard(
+                    context: context,
+                    icon: Icons.meeting_room_rounded,
+                    label: 'Rooms',
+                    subtitle: '${houseProvider.rooms.length} configured',
+                    color: AppTheme.accentCyan,
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RoomManagementScreen())),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _buildViewTab('AI RADAR (${detections.length})', 1, Icons.radar_rounded),
+                  child: _quickNavCard(
+                    context: context,
+                    icon: Icons.credit_card_rounded,
+                    label: 'RFID Cards',
+                    subtitle: '${houseProvider.rfidCards.length} registered',
+                    color: AppTheme.accentOrange,
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RfidManagementScreen())),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _buildViewTab('IMAGES (${snapshotEvents.length})', 2, Icons.photo_library_outlined),
+                  child: _quickNavCard(
+                    context: context,
+                    icon: Icons.history_rounded,
+                    label: 'Access Log',
+                    subtitle: '${accessLogs.length} attempts',
+                    color: AppTheme.statusSafe,
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AccessHistoryScreen())),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // 5. Section Switcher Tabs
+            Row(
+              children: [
+                Expanded(
+                  child: _sectionTab('OVERVIEW', 0, Icons.dashboard_rounded),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _sectionTab('DETECTIONS (${detections.length})', 1, Icons.sensors_rounded),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _sectionTab('SECURITY (${events.length})', 2, Icons.shield_rounded),
                 ),
               ],
             ),
             const SizedBox(height: 16),
 
-            // Tab 1: AI Radar / YOLO Detections Feed
-            if (_viewMode == 1) ...[
+            // Tab 0: Overview (Recent RFID / Face Access + Recent Events)
+            if (_selectedSection == 0) ...[
+              // Recent Access Feed
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('RECENT RFID & FACE ACCESS', style: TextStyle(color: AppTheme.textMuted, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+                  TextButton(
+                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AccessHistoryScreen())),
+                    child: const Text('View All', style: TextStyle(color: AppTheme.accentCyan, fontSize: 12)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (accessLogs.isEmpty)
+                const GlassCard(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(
+                      child: Text('No access attempts recorded yet.', style: TextStyle(color: AppTheme.textMuted)),
+                    ),
+                  ),
+                )
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: accessLogs.length > 5 ? 5 : accessLogs.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (context, idx) {
+                    final log = accessLogs[idx];
+                    final isGranted = log.isGranted;
+                    return GlassCard(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      borderColor: (isGranted ? AppTheme.statusSafe : AppTheme.statusDanger).withOpacity(0.3),
+                      child: Row(
+                        children: [
+                          Icon(
+                            log.accessMethod == 'FACE_EMBEDDING' ? Icons.face_rounded : Icons.credit_card_rounded,
+                            color: isGranted ? AppTheme.statusSafe : AppTheme.statusDanger,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(log.residentName, style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.bold, fontSize: 14)),
+                                Text('${log.roomName} • ${DateFormat('HH:mm:ss').format(log.timestamp)}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                              ],
+                            ),
+                          ),
+                          StatBadge(
+                            label: log.status,
+                            color: isGranted ? AppTheme.statusSafe : AppTheme.statusDanger,
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+            ],
+
+            // Tab 1: Detections Feed (Crucial distinction: DETECTED != VERIFIED_THREAT)
+            if (_selectedSection == 1) ...[
               if (detections.isEmpty)
                 const GlassCard(
                   child: Padding(
@@ -235,11 +384,11 @@ class _SecurityTabState extends State<SecurityTab> {
                     child: Center(
                       child: Column(
                         children: [
-                          Icon(Icons.radar_rounded, color: AppTheme.accentCyan, size: 40),
+                          Icon(Icons.sensors_rounded, color: AppTheme.accentCyan, size: 40),
                           SizedBox(height: 12),
-                          Text('AI Vision Radar Active', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w700)),
+                          Text('Sensor & Telemetry Ingestion Active', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.bold)),
                           SizedBox(height: 4),
-                          Text('OpenCV + YOLO object detections will stream here in real time.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12), textAlign: TextAlign.center),
+                          Text('Presence detections, motion readings, and sensor telemetry log here.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12), textAlign: TextAlign.center),
                         ],
                       ),
                     ),
@@ -251,114 +400,66 @@ class _SecurityTabState extends State<SecurityTab> {
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: detections.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (ctx, i) => _buildDetectionCard(detections[i]),
-                ),
-            ]
-            // Tab 2: Security Snapshots Gallery
-            else if (_viewMode == 2) ...[
-              if (snapshotEvents.isEmpty)
-                const GlassCard(
-                  child: Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Center(
-                      child: Column(
-                        children: [
-                          Icon(Icons.camera_alt_outlined, color: AppTheme.textMuted, size: 40),
-                          SizedBox(height: 12),
-                          Text('No Security Images Captured', style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700)),
-                          Text('AI radar captures snapshots when motion or unrecognized faces appear.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                  ),
-                )
-              else
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    childAspectRatio: 0.82,
-                  ),
-                  itemCount: snapshotEvents.length,
-                  itemBuilder: (ctx, i) {
-                    final e = snapshotEvents[i];
-                    final timeStr = DateFormat('MMM d, HH:mm').format(e.createdAt);
+                  itemBuilder: (context, idx) {
+                    final d = detections[idx];
+                    final isVerifiedThreat = d.isVerifiedThreat || d.status == 'VERIFIED_THREAT';
+                    final color = isVerifiedThreat ? AppTheme.statusDanger : AppTheme.accentCyan;
 
-                    return GestureDetector(
-                      onTap: () => _showImagePreview(context, e.imageUrl!, e.eventType.replaceAll('_', ' '), timeStr, e),
-                      child: GlassCard(
-                        padding: EdgeInsets.zero,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                                    child: Image.network(
-                                      e.imageUrl!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Container(
-                                        color: AppTheme.primarySurface,
-                                        child: const Icon(Icons.broken_image_rounded, color: AppTheme.textMuted),
-                                      ),
-                                    ),
-                                  ),
-                                  if (e.aiAnalysis?.faceRecognitionResult == 'UNKNOWN')
-                                    Positioned(
-                                      top: 6,
-                                      right: 6,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(color: AppTheme.statusDanger, borderRadius: BorderRadius.circular(6)),
-                                        child: const Text('UNKNOWN', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
-                                      ),
-                                    ),
-                                ],
-                              ),
+                    return GlassCard(
+                      padding: const EdgeInsets.all(14),
+                      borderColor: color.withOpacity(0.35),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle),
+                            child: Icon(
+                              isVerifiedThreat ? Icons.warning_amber_rounded : Icons.motion_photos_on_rounded,
+                              color: color,
+                              size: 20,
                             ),
-                            Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    e.eventType.replaceAll('_', ' '),
-                                    style: const TextStyle(color: AppTheme.textLight, fontSize: 11, fontWeight: FontWeight.w700),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  Text(timeStr, style: const TextStyle(color: AppTheme.textMuted, fontSize: 10)),
-                                ],
-                              ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      (d.className ?? d.objectType).toUpperCase(),
+                                      style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.bold, fontSize: 14),
+                                    ),
+                                    const Spacer(),
+                                    StatBadge(
+                                      label: isVerifiedThreat ? 'VERIFIED THREAT' : 'DETECTED',
+                                      color: color,
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Confidence: ${(d.confidence * 100).toStringAsFixed(0)}% • ${DateFormat('MM/dd HH:mm:ss').format(d.timestamp)}',
+                                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     );
                   },
                 ),
-            ]
-            // Tab 0: Audit Events Log
-            else ...[
+            ],
+
+            // Tab 2: Security Events Log
+            if (_selectedSection == 2) ...[
               if (events.isEmpty)
                 const GlassCard(
                   child: Padding(
                     padding: EdgeInsets.all(32),
                     child: Center(
-                      child: Column(
-                        children: [
-                          Icon(Icons.verified_user_rounded, color: AppTheme.statusSafe, size: 40),
-                          SizedBox(height: 12),
-                          Text('Perimeter Secure', style: TextStyle(color: AppTheme.statusSafe, fontSize: 16, fontWeight: FontWeight.w700)),
-                          Text('No security infractions or anomalies recorded.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                        ],
-                      ),
+                      child: Text('No security events recorded.', style: TextStyle(color: AppTheme.textMuted)),
                     ),
                   ),
                 )
@@ -368,7 +469,43 @@ class _SecurityTabState extends State<SecurityTab> {
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: events.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (ctx, i) => _buildEventCard(context, events[i]),
+                  itemBuilder: (context, idx) {
+                    final e = events[idx];
+                    final isCritical = e.severity == 'CRITICAL' || e.status == 'CONFIRMED_THREAT';
+                    final color = isCritical ? AppTheme.statusDanger : AppTheme.accentCyan;
+
+                    return GlassCard(
+                      padding: const EdgeInsets.all(14),
+                      borderColor: color.withOpacity(0.3),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.shield_rounded, color: color, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  e.eventType.replaceAll('_', ' '),
+                                  style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14),
+                                ),
+                              ),
+                              StatBadge(label: e.status, color: color),
+                            ],
+                          ),
+                          if (e.description != null && e.description!.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(e.description!, style: const TextStyle(color: AppTheme.textLight, fontSize: 12)),
+                          ],
+                          const SizedBox(height: 6),
+                          Text(
+                            DateFormat('EEE, MMM d • HH:mm:ss').format(e.createdAt),
+                            style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
             ],
           ],
@@ -377,234 +514,98 @@ class _SecurityTabState extends State<SecurityTab> {
     );
   }
 
-  Widget _buildViewTab(String label, int index, IconData icon) {
-    final isSelected = _viewMode == index;
-    return GestureDetector(
-      onTap: () => setState(() => _viewMode = index),
+  Widget _armButton({
+    required String label,
+    required IconData icon,
+    required bool isActive,
+    required Color activeColor,
+    required VoidCallback onPressed,
+  }) {
+    return ElevatedButton.icon(
+      icon: Icon(icon, size: 15),
+      label: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isActive ? activeColor : AppTheme.primarySurface,
+        foregroundColor: isActive ? Colors.black : AppTheme.textLight,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      onPressed: onPressed,
+    );
+  }
+
+  Widget _deviceStatusTile(String label, String count, IconData icon) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: AppTheme.primarySurface.withOpacity(0.6),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 18, color: AppTheme.accentCyan),
+            const SizedBox(height: 4),
+            Text(count, style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.bold, fontSize: 15)),
+            Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 10), textAlign: TextAlign.center, maxLines: 1),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _quickNavCard({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GlassCard(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+      onTap: onTap,
+      borderColor: color.withOpacity(0.3),
+      child: Column(
+        children: [
+          Icon(icon, size: 24, color: color),
+          const SizedBox(height: 6),
+          Text(label, style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.bold, fontSize: 13)),
+          const SizedBox(height: 2),
+          Text(subtitle, style: const TextStyle(color: AppTheme.textMuted, fontSize: 10)),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTab(String label, int index, IconData icon) {
+    final isSelected = _selectedSection == index;
+    return InkWell(
+      onTap: () => setState(() => _selectedSection = index),
+      borderRadius: BorderRadius.circular(10),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? AppTheme.accentBlue : AppTheme.primarySurface,
+          color: isSelected ? AppTheme.accentCyan.withOpacity(0.18) : AppTheme.primaryCard,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: isSelected ? AppTheme.accentCyan.withOpacity(0.5) : Colors.white10),
+          border: Border.all(color: isSelected ? AppTheme.accentCyan : Colors.transparent),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 14, color: isSelected ? Colors.white : AppTheme.textMuted),
-            const SizedBox(width: 4),
+            Icon(icon, size: 14, color: isSelected ? AppTheme.accentCyan : AppTheme.textMuted),
+            const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                color: isSelected ? Colors.white : AppTheme.textMuted,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                fontSize: 10,
+                color: isSelected ? AppTheme.accentCyan : AppTheme.textMuted,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 11,
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildDetectionCard(DetectionEventModel d) {
-    Color statusColor = AppTheme.statusSafe;
-    IconData objIcon = Icons.help_outline_rounded;
-
-    if (d.objectType == 'person') {
-      objIcon = Icons.person_rounded;
-    } else if (d.objectType == 'vehicle') {
-      objIcon = Icons.directions_car_rounded;
-    } else if (d.objectType == 'animal') {
-      objIcon = Icons.pets_rounded;
-    } else if (d.objectType == 'package') {
-      objIcon = Icons.inventory_2_rounded;
-    }
-
-    if (d.status == 'VERIFIED_THREAT') {
-      statusColor = AppTheme.statusDanger;
-    } else if (d.status == 'SUSPICIOUS') {
-      statusColor = AppTheme.statusWarning;
-    } else {
-      statusColor = AppTheme.statusSafe;
-    }
-
-    final timeStr = DateFormat('MMM d • HH:mm:ss').format(d.timestamp);
-
-    return GlassCard(
-      borderColor: statusColor.withOpacity(0.3),
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: statusColor.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(objIcon, color: statusColor, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '${(d.className ?? d.objectType).toUpperCase()}  ${(d.confidence * 100).toStringAsFixed(0)}%',
-                      style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w800, fontSize: 13),
-                    ),
-                    StatBadge(label: d.status.replaceAll('_', ' '), color: statusColor),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                if (d.hasFace) ...[
-                  Row(
-                    children: [
-                      const Icon(Icons.face_rounded, size: 12, color: AppTheme.accentCyan),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Face detected (${(d.faceConfidence * 100).toStringAsFixed(0)}% conf)',
-                        style: const TextStyle(color: AppTheme.accentCyan, fontSize: 11),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                ],
-                if (d.boundingBox != null) ...[
-                  Text(
-                    'Bounding Box: X=${d.boundingBox!['x']} Y=${d.boundingBox!['y']} W=${d.boundingBox!['w']} H=${d.boundingBox!['h']}',
-                    style: const TextStyle(color: AppTheme.textDim, fontSize: 10),
-                  ),
-                  const SizedBox(height: 2),
-                ],
-                Text(timeStr, style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEventCard(BuildContext context, SecurityEventModel event) {
-    Color threatColor = AppTheme.statusSafe;
-    IconData icon = Icons.check_circle_outline;
-    String threatLabel = 'NORMAL';
-
-    if (event.aiAnalysis?.threatLevel == 'CONFIRMED_THREAT' || event.status == 'CONFIRMED_THREAT') {
-      threatColor = AppTheme.statusDanger;
-      icon = Icons.warning_rounded;
-      threatLabel = 'CONFIRMED THREAT';
-    } else if (event.aiAnalysis?.threatLevel == 'SUSPICIOUS' || event.status == 'INVESTIGATING') {
-      threatColor = AppTheme.statusWarning;
-      icon = Icons.query_stats_rounded;
-      threatLabel = 'SUSPICIOUS';
-    } else if (event.eventType == 'MANUAL_EMERGENCY') {
-      threatColor = AppTheme.statusDanger;
-      icon = Icons.emergency_rounded;
-      threatLabel = 'EMERGENCY';
-    }
-
-    final timeStr = DateFormat('MMM d, yyyy • HH:mm:ss').format(event.createdAt);
-
-    return GlassCard(
-      borderColor: threatColor.withOpacity(0.4),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: threatColor, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  event.eventType.replaceAll('_', ' '),
-                  style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700, fontSize: 14),
-                ),
-              ),
-              StatBadge(label: threatLabel, color: threatColor),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (event.imageUrl != null && event.imageUrl!.isNotEmpty)
-            GestureDetector(
-              onTap: () => _showImagePreview(context, event.imageUrl!, event.eventType.replaceAll('_', ' '), timeStr, event),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Stack(
-                  alignment: Alignment.bottomRight,
-                  children: [
-                    Image.network(
-                      event.imageUrl!,
-                      height: 140,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        height: 80,
-                        decoration: BoxDecoration(
-                          color: AppTheme.primarySurface,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Center(child: Icon(Icons.camera_alt_outlined, color: AppTheme.textDim)),
-                      ),
-                    ),
-                    Container(
-                      margin: const EdgeInsets.all(8),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(6)),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.fullscreen_rounded, size: 14, color: Colors.white),
-                          SizedBox(width: 4),
-                          Text('Inspect', style: TextStyle(color: Colors.white, fontSize: 10)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          if (event.imageUrl != null && event.imageUrl!.isNotEmpty) const SizedBox(height: 10),
-          if (event.description != null)
-            Text(event.description!, style: const TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.4)),
-          if (event.aiAnalysis != null) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                _aiChip('Face: ${event.aiAnalysis!.faceRecognitionResult == 'UNKNOWN' ? '🚨 UNRECOGNIZED' : event.aiAnalysis!.faceRecognitionResult}', event.aiAnalysis!.faceRecognitionResult == 'UNKNOWN' ? AppTheme.statusDanger : AppTheme.statusSafe),
-                if (event.aiAnalysis!.personDetected)
-                  _aiChip('Human: ${(event.aiAnalysis!.personConfidence * 100).toStringAsFixed(0)}%', AppTheme.accentCyan),
-                _aiChip('Risk Score: ${event.aiAnalysis!.riskScore.toStringAsFixed(0)}%', threatColor),
-              ],
-            ),
-          ],
-          const SizedBox(height: 8),
-          Text(
-            timeStr,
-            style: const TextStyle(color: AppTheme.textDim, fontSize: 11),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static Widget _aiChip(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
     );
   }
 }

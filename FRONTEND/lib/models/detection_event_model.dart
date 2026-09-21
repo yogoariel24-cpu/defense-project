@@ -27,6 +27,8 @@ class DetectionEventModel {
     required this.timestamp,
   });
 
+  bool get isVerifiedThreat => status == 'VERIFIED_THREAT';
+
   factory DetectionEventModel.fromJson(Map<String, dynamic> json) {
     return DetectionEventModel(
       id: json['id'] ?? '',

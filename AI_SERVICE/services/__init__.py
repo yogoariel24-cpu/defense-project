@@ -1,1 +1,0 @@
-# Vigilis AI Services package

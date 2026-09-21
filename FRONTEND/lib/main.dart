@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'services/api_service.dart';
 import 'services/auth_provider.dart';
+import 'services/house_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/admin/admin_dashboard.dart';
 import 'screens/homeowner/homeowner_dashboard.dart';
@@ -17,6 +18,10 @@ void main() {
       providers: [
         Provider<ApiService>.value(value: apiService),
         ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+        ChangeNotifierProxyProvider<AuthProvider, HouseProvider>(
+          create: (_) => HouseProvider(apiService),
+          update: (_, auth, previous) => previous ?? HouseProvider(apiService),
+        ),
       ],
       child: const VigilisApp(),
     ),
@@ -39,7 +44,7 @@ class VigilisApp extends StatelessWidget {
           }
 
           // Route strictly to role-appropriate dashboard
-          switch (auth.currentUser!.role) {
+          switch (auth.currentUser?.role) {
             case 'PLATFORM_ADMIN':
               return const AdminDashboardScreen();
             case 'HOMEOWNER':

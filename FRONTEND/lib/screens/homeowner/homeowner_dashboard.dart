@@ -10,6 +10,10 @@ import 'tabs/security_tab.dart';
 import 'tabs/devices_tab.dart';
 import 'tabs/residents_tab.dart';
 
+import 'room_management_screen.dart';
+import 'rfid_management_screen.dart';
+import 'access_history_screen.dart';
+
 class HomeownerDashboard extends StatefulWidget {
   const HomeownerDashboard({super.key});
 
@@ -30,9 +34,22 @@ class _HomeownerDashboardState extends State<HomeownerDashboard> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<HouseProvider>(context, listen: false).refreshAll();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
-    final user = auth.currentUser!;
+    final user = auth.currentUser;
+    if (user == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     // If payment is not yet validated by the admin, gate access behind PaymentScreen
     if (!user.isPaymentApproved && !_forceUnlocked) {
@@ -43,37 +60,79 @@ class _HomeownerDashboardState extends State<HomeownerDashboard> {
       );
     }
 
-    return ChangeNotifierProvider(
-      create: (_) => HouseProvider(auth.apiService),
-      child: Scaffold(
+    return Scaffold(
         appBar: AppBar(
-          title: Row(
+          leading: Padding(
+            padding: const EdgeInsets.only(left: 12, top: 8, bottom: 8),
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppTheme.accentCyan.withOpacity(0.5), width: 1.5),
+              ),
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/images/logo.jpg',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.shield_rounded, color: AppTheme.accentCyan, size: 20),
+                ),
+              ),
+            ),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: const BoxDecoration(
-                  color: AppTheme.accentBlue,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    user.firstName.isNotEmpty ? user.firstName[0] : 'H',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(user.fullName, style: const TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w700)),
-                  Text(user.houseName ?? user.houseId ?? '', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
-                ],
-              ),
+              Text(user.fullName, style: const TextStyle(color: AppTheme.textLight, fontSize: 15, fontWeight: FontWeight.w700)),
+              Text(user.houseName ?? user.houseId ?? '', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
             ],
           ),
           actions: [
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.tune_rounded, color: AppTheme.accentCyan),
+              tooltip: 'Access & Room Controls',
+              color: AppTheme.primaryCard,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              onSelected: (val) {
+                if (val == 'rooms') {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const RoomManagementScreen()));
+                } else if (val == 'rfid') {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const RfidManagementScreen()));
+                } else if (val == 'history') {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const AccessHistoryScreen()));
+                }
+              },
+              itemBuilder: (ctx) => [
+                const PopupMenuItem(
+                  value: 'rooms',
+                  child: Row(
+                    children: [
+                      Icon(Icons.meeting_room_rounded, color: AppTheme.accentCyan, size: 18),
+                      SizedBox(width: 10),
+                      Text('Room Management', style: TextStyle(color: AppTheme.textLight, fontSize: 13)),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'rfid',
+                  child: Row(
+                    children: [
+                      Icon(Icons.credit_card_rounded, color: AppTheme.accentOrange, size: 18),
+                      SizedBox(width: 10),
+                      Text('RFID Keycards', style: TextStyle(color: AppTheme.textLight, fontSize: 13)),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'history',
+                  child: Row(
+                    children: [
+                      Icon(Icons.history_rounded, color: AppTheme.statusSafe, size: 18),
+                      SizedBox(width: 10),
+                      Text('Access History Audit', style: TextStyle(color: AppTheme.textLight, fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
             IconButton(
               icon: const Icon(Icons.notifications_none_rounded, color: AppTheme.textLight),
               onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
@@ -118,7 +177,7 @@ class _HomeownerDashboardState extends State<HomeownerDashboard> {
                 .toList(),
           ),
         ),
-      ),
-    );
+      );
   }
 }
+

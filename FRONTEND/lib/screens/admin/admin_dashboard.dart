@@ -556,11 +556,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12, top: 8, bottom: 8),
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.amber.withOpacity(0.5), width: 1.5),
+            ),
+            child: ClipOval(
+              child: Image.asset(
+                'assets/images/logo.jpg',
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const Icon(Icons.admin_panel_settings_rounded, color: Colors.amber, size: 20),
+              ),
+            ),
+          ),
+        ),
         title: const Row(
           children: [
-            Icon(Icons.admin_panel_settings_rounded, color: Colors.amber, size: 24),
-            SizedBox(width: 10),
-            Text('Platform Administration'),
+            Text('VIGILIS Admin Portal', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
           ],
         ),
         actions: [

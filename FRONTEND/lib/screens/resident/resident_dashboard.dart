@@ -20,49 +20,56 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
   int _selectedIndex = 0;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<HouseProvider>(context, listen: false).refreshAll();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
-    final user = auth.currentUser!;
+    final user = auth.currentUser;
+    if (user == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
     final permissions = user.permissions ?? {};
     final canViewCameras = permissions['can_view_cameras'] == true;
     final canControlLights = permissions['can_control_lights'] ?? true;
     final canArmSecurity = permissions['can_arm_security'] == true;
 
-    return ChangeNotifierProvider(
-      create: (_) => HouseProvider(auth.apiService),
-      child: Consumer<HouseProvider>(
-        builder: (ctx, houseProvider, _) {
+    return Consumer<HouseProvider>(
+      builder: (ctx, houseProvider, _) {
           final house = houseProvider.house;
           final events = houseProvider.securityEvents;
           final snapshotEvents = events.where((e) => e.imageUrl != null && e.imageUrl!.isNotEmpty).toList();
 
           return Scaffold(
             appBar: AppBar(
-              title: Row(
+              leading: Padding(
+                padding: const EdgeInsets.only(left: 12, top: 8, bottom: 8),
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTheme.accentCyan.withOpacity(0.5), width: 1.5),
+                  ),
+                  child: ClipOval(
+                    child: Image.asset(
+                      'assets/images/logo.jpg',
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(Icons.shield_rounded, color: AppTheme.accentCyan, size: 20),
+                    ),
+                  ),
+                ),
+              ),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: AppTheme.accentBlue.withOpacity(0.2),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppTheme.accentCyan.withOpacity(0.4)),
-                    ),
-                    child: Center(
-                      child: Text(
-                        user.firstName.isNotEmpty ? user.firstName[0] : 'R',
-                        style: const TextStyle(color: AppTheme.accentCyan, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(user.fullName, style: const TextStyle(color: AppTheme.textLight, fontSize: 15, fontWeight: FontWeight.w700)),
-                      Text('Resident • ${user.houseId}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
-                    ],
-                  ),
+                  Text(user.fullName, style: const TextStyle(color: AppTheme.textLight, fontSize: 15, fontWeight: FontWeight.w700)),
+                  Text('Resident • ${user.houseId}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                 ],
               ),
               actions: [
@@ -398,8 +405,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
             ),
           );
         },
-      ),
-    );
+      );
   }
 
   Widget _statusTile(String label, String value, IconData icon, Color color) {

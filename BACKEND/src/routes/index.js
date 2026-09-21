@@ -10,6 +10,10 @@ const lightingRoutes = require('./lighting.routes');
 const securityRoutes = require('./security.routes');
 const emergencyRoutes = require('./emergency.routes');
 const notificationRoutes = require('./notification.routes');
+const roomRoutes = require('./room.routes');
+const rfidRoutes = require('./rfid.routes');
+const accessHistoryRoutes = require('./accessHistory.routes');
+const iotRoutes = require('./iot.routes');
 
 // Health Check
 router.get('/health', (req, res) => {
@@ -29,5 +33,9 @@ router.use('/lighting', lightingRoutes);
 router.use('/security', securityRoutes);
 router.use('/emergency', emergencyRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/rooms', roomRoutes);
+router.use('/rfid', rfidRoutes);
+router.use('/access-history', accessHistoryRoutes);
+router.use('/iot', iotRoutes);
 
 module.exports = router;

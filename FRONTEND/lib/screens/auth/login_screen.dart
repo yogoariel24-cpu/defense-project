@@ -162,30 +162,37 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Brand Header
+                  // Brand Header with Vigilis Logo
                   Center(
                     child: Container(
-                      padding: const EdgeInsets.all(18),
+                      width: 90,
+                      height: 90,
                       decoration: BoxDecoration(
-                        color: AppTheme.accentBlue.withOpacity(0.12),
                         shape: BoxShape.circle,
-                        border: Border.all(color: AppTheme.accentCyan.withOpacity(0.4), width: 1.5),
+                        border: Border.all(color: AppTheme.accentCyan.withOpacity(0.6), width: 2),
                         boxShadow: [
                           BoxShadow(
-                            color: AppTheme.accentBlue.withOpacity(0.25),
-                            blurRadius: 20,
+                            color: AppTheme.accentCyan.withOpacity(0.3),
+                            blurRadius: 24,
                             spreadRadius: 2,
                           ),
                         ],
                       ),
-                      child: const Icon(
-                        Icons.shield_rounded,
-                        color: AppTheme.accentCyan,
-                        size: 44,
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/images/logo.jpg',
+                          width: 90,
+                          height: 90,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: AppTheme.accentBlue.withOpacity(0.2),
+                            child: const Icon(Icons.shield_rounded, color: AppTheme.accentCyan, size: 44),
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 16),
                   const Text(
                     'V I G I L I S',
                     textAlign: TextAlign.center,

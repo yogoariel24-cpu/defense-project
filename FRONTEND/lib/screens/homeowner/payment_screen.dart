@@ -108,17 +108,27 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            const Icon(Icons.lock_clock_rounded, color: AppTheme.accentCyan, size: 22),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Account Activation', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800)),
-                Text('${user.fullName} • ${user.houseName ?? user.houseId}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
-              ],
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12, top: 8, bottom: 8),
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: AppTheme.accentCyan.withOpacity(0.5), width: 1.5),
             ),
+            child: ClipOval(
+              child: Image.asset(
+                'assets/images/logo.jpg',
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const Icon(Icons.shield_rounded, color: AppTheme.accentCyan, size: 20),
+              ),
+            ),
+          ),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Account Activation', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800)),
+            Text('${user.fullName} • ${user.houseName ?? user.houseId}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
           ],
         ),
         actions: [
