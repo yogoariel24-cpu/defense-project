@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 class ApiService {
   static String get baseUrl {
     if (!kIsWeb && Platform.isAndroid) {
-      return 'http://10.0.2.2:5000/api'; // Android Emulator alias for host localhost
+      return 'http://192.168.1.130:5000/api'; // Local network IP for real device
     }
     return 'http://localhost:5000/api'; // Windows desktop, Web, macOS, iOS
   }

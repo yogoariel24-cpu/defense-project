@@ -5,6 +5,12 @@ const {
   handleFaceAccessAttempt,
   handleIoTEvent,
   handleDeviceHeartbeat,
+  handleLightSensorReading,
+  handleGetDoorStatus,
+  handleGetLightState,
+  handleLightStateSync,
+  handleGetDeviceConfig,
+  handleEmergencyTrigger,
 } = require('../controllers/iot.controller');
 
 /**
@@ -28,16 +34,24 @@ const verifyIoTToken = (req, res, next) => {
 
 router.use(verifyIoTToken);
 
-// 1. RFID Card Access Attempt
+// 1. Access Control (RFID & Facial Recognition)
 router.post('/access/rfid', handleRfidAccessAttempt);
-
-// 2. Facial Recognition Face Embedding Access Attempt
 router.post('/access/face', handleFaceAccessAttempt);
+router.get('/door/status/:device_identifier', handleGetDoorStatus);
 
-// 3. Sensor / Presence Detection Telemetry Events
+// 2. Sensor / Presence Detection Telemetry Events
 router.post('/events', handleIoTEvent);
+router.post('/sensors/light', handleLightSensorReading);
 
-// 4. Device Heartbeat
+// 3. Smart Actuators (Relays & Lighting)
+router.get('/lights/:device_identifier/state', handleGetLightState);
+router.post('/lights/state-sync', handleLightStateSync);
+
+// 4. Device Lifecycle & Diagnostics
 router.post('/heartbeat', handleDeviceHeartbeat);
+router.get('/config/:device_identifier', handleGetDeviceConfig);
+
+// 5. Hardware Emergency Trigger
+router.post('/emergency/trigger', handleEmergencyTrigger);
 
 module.exports = router;

@@ -10,6 +10,11 @@ const {
   AccessHistory,
   SecurityEvent,
   Notification,
+  SmartLight,
+  LightSensor,
+  MotionSensor,
+  Camera,
+  EmergencyEvent,
 } = require('../models');
 const { calculateFaceDistance } = require('../services/aiVisionEngine');
 const { dispatchEmergency } = require('../services/emergencyService');
@@ -238,6 +243,7 @@ const handleRfidAccessAttempt = async (req, res, next) => {
       granted: true,
       status: 'GRANTED',
       door_unlocked: true,
+      unlock_duration_seconds: 5,
       message: `Access granted. Door unlocked for ${residentName}.`,
       data: {
         resident: resident ? { id: resident.id, name: residentName } : null,
@@ -469,6 +475,7 @@ const handleFaceAccessAttempt = async (req, res, next) => {
       granted: true,
       status: 'GRANTED',
       door_unlocked: true,
+      unlock_duration_seconds: 5,
       message: `Face recognized: ${residentName}. Door unlocked automatically.`,
       data: {
         resident: { id: resident.id, name: residentName },
@@ -650,7 +657,327 @@ const handleDeviceHeartbeat = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Heartbeat acknowledged.',
-      data: { device_identifier, status: device.status, last_heartbeat_at: device.last_heartbeat_at },
+      data: {
+        device_identifier,
+        status: device.status,
+        last_heartbeat_at: device.last_heartbeat_at,
+        server_time: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * 5. Ambient Light Sensor Telemetry Endpoint
+ * Received from ambient light sensor (e.g. BH1750, LDR on ESP32).
+ * Payload: { device_identifier, current_lux, timestamp? }
+ */
+const handleLightSensorReading = async (req, res, next) => {
+  try {
+    const { device_identifier, current_lux, timestamp = new Date() } = req.body;
+
+    if (!device_identifier || current_lux === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'device_identifier and current_lux are required.',
+      });
+    }
+
+    const device = await resolveDevice(device_identifier);
+    if (!device) {
+      return res.status(404).json({ success: false, message: 'Device not recognized or not registered.' });
+    }
+
+    const houseId = device.house_id;
+    let lightSensor = await LightSensor.findOne({ where: { device_id: device.id } });
+    if (!lightSensor) {
+      lightSensor = await LightSensor.create({
+        device_id: device.id,
+        house_id: houseId,
+        location_name: device.name || 'Room Light Sensor',
+        current_lux: parseFloat(current_lux),
+        threshold_lux: 150.0,
+      });
+    } else {
+      lightSensor.current_lux = parseFloat(current_lux);
+      lightSensor.last_reading_at = timestamp;
+      await lightSensor.save();
+    }
+
+    const house = await House.findByPk(houseId);
+    const houseMode = house?.light_mode || 'AUTO';
+    let shouldActivateLights = false;
+
+    if (houseMode === 'AUTO') {
+      if (lightSensor.current_lux < lightSensor.threshold_lux) {
+        shouldActivateLights = true;
+        await SmartLight.update({ is_on: true }, { where: { house_id: houseId, mode: 'AUTO' } });
+      }
+    }
+
+    // Real-time broadcast to dashboard
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`house_${houseId}`).emit('light_sensor_telemetry', {
+        houseId,
+        deviceIdentifier: device_identifier,
+        currentLux: lightSensor.current_lux,
+        thresholdLux: lightSensor.threshold_lux,
+        mode: houseMode,
+        shouldActivateLights,
+        timestamp,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Light reading recorded.',
+      data: {
+        current_lux: lightSensor.current_lux,
+        threshold_lux: lightSensor.threshold_lux,
+        mode: houseMode,
+        should_activate_lights: shouldActivateLights,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * 6. Door Lock Status Query Endpoint
+ * Queried by door lock actuators / ESP32 to verify lock state.
+ * Param: :device_identifier
+ */
+const handleGetDoorStatus = async (req, res, next) => {
+  try {
+    const { device_identifier } = req.params;
+    if (!device_identifier) {
+      return res.status(400).json({ success: false, message: 'device_identifier parameter is required.' });
+    }
+
+    const device = await resolveDevice(device_identifier);
+    if (!device) {
+      return res.status(404).json({ success: false, message: 'Device not recognized.' });
+    }
+
+    const targetRoomId = device.room_id || null;
+    let roomName = 'Main Entrance';
+    if (targetRoomId) {
+      const room = await Room.findByPk(targetRoomId);
+      if (room) roomName = room.name;
+    }
+
+    return res.status(200).json({
+      success: true,
+      device_identifier: device.device_identifier,
+      room_name: roomName,
+      is_locked: true,
+      auto_relock_seconds: 10,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * 7. Smart Light / Relay Commanded State Endpoint
+ * Queried by smart relays / ESP32 to fetch desired state.
+ * Param: :device_identifier
+ */
+const handleGetLightState = async (req, res, next) => {
+  try {
+    const { device_identifier } = req.params;
+    if (!device_identifier) {
+      return res.status(400).json({ success: false, message: 'device_identifier parameter is required.' });
+    }
+
+    const device = await resolveDevice(device_identifier);
+    if (!device) {
+      return res.status(404).json({ success: false, message: 'Device not recognized.' });
+    }
+
+    let light = await SmartLight.findOne({ where: { device_id: device.id } });
+    if (!light) {
+      light = await SmartLight.findOne({ where: { house_id: device.house_id } });
+    }
+
+    if (!light) {
+      return res.status(404).json({ success: false, message: 'No smart light found for this device.' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      device_identifier: device.device_identifier,
+      relay_pin: light.relay_pin || 23,
+      is_on: light.is_on,
+      brightness_percentage: light.brightness_percentage,
+      mode: light.mode,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * 8. Physical Switch State Sync Endpoint
+ * Received when physical wall switch or hardware toggles the relay.
+ * Payload: { device_identifier, is_on, brightness_percentage?, triggered_by? }
+ */
+const handleLightStateSync = async (req, res, next) => {
+  try {
+    const { device_identifier, is_on, brightness_percentage, triggered_by = 'PHYSICAL_WALL_SWITCH' } = req.body;
+
+    if (!device_identifier || is_on === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'device_identifier and is_on are required.',
+      });
+    }
+
+    const device = await resolveDevice(device_identifier);
+    if (!device) {
+      return res.status(404).json({ success: false, message: 'Device not recognized.' });
+    }
+
+    let light = await SmartLight.findOne({ where: { device_id: device.id } });
+    if (!light) {
+      light = await SmartLight.findOne({ where: { house_id: device.house_id } });
+    }
+
+    if (!light) {
+      return res.status(404).json({ success: false, message: 'No smart light entity found for this device.' });
+    }
+
+    light.is_on = Boolean(is_on);
+    if (brightness_percentage !== undefined && brightness_percentage >= 0 && brightness_percentage <= 100) {
+      light.brightness_percentage = brightness_percentage;
+    }
+    await light.save();
+
+    // Broadcast to Flutter app
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`house_${device.house_id}`).emit('lighting_update', {
+        type: 'PHYSICAL_SYNC',
+        light,
+        triggered_by,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Light state synchronized.',
+      data: {
+        device_identifier,
+        is_on: light.is_on,
+        brightness_percentage: light.brightness_percentage,
+        mode: light.mode,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * 9. Device Boot & Startup Configuration Endpoint
+ * Queried by ESP32 / cameras on power-up to fetch startup settings.
+ * Param: :device_identifier
+ */
+const handleGetDeviceConfig = async (req, res, next) => {
+  try {
+    const { device_identifier } = req.params;
+    if (!device_identifier) {
+      return res.status(400).json({ success: false, message: 'device_identifier parameter is required.' });
+    }
+
+    const device = await Device.findOne({
+      where: { device_identifier },
+      include: [
+        { model: Room, as: 'room' },
+        { model: SmartLight, as: 'smartLight' },
+        { model: MotionSensor, as: 'motionSensor' },
+        { model: LightSensor, as: 'lightSensor' },
+        { model: Camera, as: 'camera' },
+      ],
+    });
+
+    if (!device) {
+      return res.status(404).json({ success: false, message: 'Device not recognized.' });
+    }
+
+    device.status = 'ONLINE';
+    device.last_heartbeat_at = new Date();
+    await device.save().catch(() => {});
+
+    const config = {};
+    if (device.smartLight) {
+      config.relay_pin = device.smartLight.relay_pin;
+      config.is_on = device.smartLight.is_on;
+      config.brightness_percentage = device.smartLight.brightness_percentage;
+    }
+    if (device.motionSensor) {
+      config.sensitivity = device.motionSensor.sensitivity;
+    }
+    if (device.lightSensor) {
+      config.threshold_lux = device.lightSensor.threshold_lux;
+    }
+    if (device.camera) {
+      config.stream_url = device.camera.stream_url;
+    }
+
+    return res.status(200).json({
+      success: true,
+      device_identifier: device.device_identifier,
+      house_id: device.house_id,
+      name: device.name,
+      type: device.type,
+      room_name: device.room ? device.room.name : null,
+      heartbeat_interval_seconds: 30,
+      config,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * 10. Physical Panic Button / Smoke / Gas Detector Emergency Trigger Endpoint
+ * Received from wall panic button or safety detector.
+ * Payload: { device_identifier, emergency_type?, notes? }
+ */
+const handleEmergencyTrigger = async (req, res, next) => {
+  try {
+    const { device_identifier, emergency_type = 'PANIC_BUTTON', notes } = req.body;
+
+    if (!device_identifier) {
+      return res.status(400).json({ success: false, message: 'device_identifier is required.' });
+    }
+
+    const device = await resolveDevice(device_identifier);
+    if (!device) {
+      return res.status(404).json({ success: false, message: 'Device not recognized.' });
+    }
+
+    const houseId = device.house_id;
+    const io = req.app.get('io');
+    const emergencyNotes = notes || `Hardware trigger: ${emergency_type} activated at device ${device.name}.`;
+
+    const emergencyEvent = await dispatchEmergency({
+      houseId,
+      source: 'EXTERNAL_TRIGGER',
+      notes: emergencyNotes,
+      io,
+    });
+
+    return res.status(200).json({
+      success: true,
+      emergency_id: emergencyEvent.id,
+      status: emergencyEvent.status,
+      message: 'Emergency alert triggered and emergency contacts notified.',
     });
   } catch (error) {
     next(error);
@@ -662,4 +989,10 @@ module.exports = {
   handleFaceAccessAttempt,
   handleIoTEvent,
   handleDeviceHeartbeat,
+  handleLightSensorReading,
+  handleGetDoorStatus,
+  handleGetLightState,
+  handleLightStateSync,
+  handleGetDeviceConfig,
+  handleEmergencyTrigger,
 };
