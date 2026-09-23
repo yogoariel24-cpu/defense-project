@@ -4,7 +4,6 @@ const { Server } = require('socket.io');
 const app = require('./app');
 const { sequelize, testConnection } = require('./config/database');
 const { ensureAdminExists } = require('./config/initAdmin');
-const { runIoTSimulationStep } = require('./services/iotSimulatorService');
 
 const PORT = process.env.PORT || 5000;
 
@@ -50,11 +49,6 @@ const startServer = async () => {
     } else {
       console.warn('⚠️ Server starting in offline/mock DB mode (MySQL not responding). Check XAMPP MySQL.');
     }
-
-    // Run simulated sensor loop every 8 seconds
-    setInterval(() => {
-      runIoTSimulationStep(io);
-    }, 8000);
 
     server.listen(PORT, () => {
       console.log(`🚀 Vigilis Intelligent House Backend is running on http://localhost:${PORT}`);
