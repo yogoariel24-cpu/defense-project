@@ -1,0 +1,569 @@
+{
+	"info": {
+		"_postman_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+		"name": "Vigilis Intelligent Security & IoT API",
+		"description": "Complete Postman collection for testing the Vigilis Smart Home & Defense Platform API.\nIncludes Admin Management, Device Ordering, Admin Hardware Provisioning, Twilio Telephony & Emergency GPS Alerts, Security AI, and Lighting Control.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "0. Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/health",
+					"host": ["{{base_url}}"],
+					"path": ["api", "health"]
+				},
+				"description": "Check if Vigilis backend server is online and running."
+			},
+			"response": []
+		},
+		{
+			"name": "1. Authentication",
+			"item": [
+				{
+					"name": "Login as Admin (Auto-saves Token)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"admin_token\", jsonData.token);",
+									"    console.log(\"Admin token saved: \" + jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@vigilis.com\",\n    \"password\": \"admin123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/login",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "login"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Login as Homeowner (Auto-saves Token)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"homeowner_token\", jsonData.token);",
+									"    if (jsonData.user && jsonData.user.houseId) {",
+									"        pm.environment.set(\"house_id\", jsonData.user.houseId);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"homeowner@vigilis.com\",\n    \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/login",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "login"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Current Profile (Self)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/auth/me",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "me"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. Admin Management",
+			"item": [
+				{
+					"name": "Get Platform Statistics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/admin/stats",
+							"host": ["{{base_url}}"],
+							"path": ["api", "admin", "stats"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Homeowners",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/admin/homeowners",
+							"host": ["{{base_url}}"],
+							"path": ["api", "admin", "homeowners"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Validate Homeowner Payment",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"VALIDATED\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/admin/homeowners/{{homeowner_user_id}}/payment",
+							"host": ["{{base_url}}"],
+							"path": ["api", "admin", "homeowners", "{{homeowner_user_id}}", "payment"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Suspend / Activate User Account",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"SUSPENDED\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/admin/users/{{homeowner_user_id}}/status",
+							"host": ["{{base_url}}"],
+							"path": ["api", "admin", "users", "{{homeowner_user_id}}", "status"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Device Orders (Pending Hardware)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/admin/device-orders",
+							"host": ["{{base_url}}"],
+							"path": ["api", "admin", "device-orders"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Admin Provision Hardware to House",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"device_identifier\": \"CAM_FRONT_01\",\n    \"name\": \"Front Porch AI Camera\",\n    \"type\": \"ESP32_CAM\",\n    \"ip_address\": \"192.168.1.150\",\n    \"mac_address\": \"24:0A:C4:8B:2A:14\",\n    \"stream_url\": \"http://192.168.1.150:81/stream\",\n    \"location_name\": \"Front Porch\",\n    \"order_id\": \"{{order_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/admin/houses/{{house_id}}/devices",
+							"host": ["{{base_url}}"],
+							"path": ["api", "admin", "houses", "{{house_id}}", "devices"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. House & Hardware Purchase",
+			"item": [
+				{
+					"name": "Get House Details & Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{homeowner_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/houses",
+							"host": ["{{base_url}}"],
+							"path": ["api", "houses"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Order Hardware Device (Homeowner)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{homeowner_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"device_type\": \"CAMERA\",\n    \"device_name\": \"Perimeter Security Camera\",\n    \"payment_method\": \"MOBILE_MONEY\",\n    \"payment_reference\": \"+237659476765\",\n    \"quantity\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/houses/devices/order",
+							"host": ["{{base_url}}"],
+							"path": ["api", "houses", "devices", "order"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get House Device Orders",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{homeowner_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/houses/devices/orders",
+							"host": ["{{base_url}}"],
+							"path": ["api", "houses", "devices", "orders"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. Emergency & Telephony",
+			"item": [
+				{
+					"name": "Trigger Panic Alarm (Twilio Call + SMS + GPS)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{homeowner_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"latitude\": 4.051056,\n    \"longitude\": 9.767868,\n    \"notes\": \"Intruder alert detected! Automated panic button triggered.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/emergency/trigger",
+							"host": ["{{base_url}}"],
+							"path": ["api", "emergency", "trigger"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Emergency History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{homeowner_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/emergency/history",
+							"host": ["{{base_url}}"],
+							"path": ["api", "emergency", "history"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "5. Security & Lighting",
+			"item": [
+				{
+					"name": "Get Security Events & Audit Log",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{homeowner_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/security/events",
+							"host": ["{{base_url}}"],
+							"path": ["api", "security", "events"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Ingest YOLO + OpenCV Detection",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "x-ai-service-key",
+								"value": "vigilis_ai_secret_key_2026"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"house_id\": \"HS-9982\",\n    \"camera_name\": \"Front Porch Camera\",\n    \"object_type\": \"person\",\n    \"class_name\": \"person\",\n    \"confidence\": 0.94,\n    \"bounding_box\": {\"x\": 0.35, \"y\": 0.20, \"w\": 0.30, \"h\": 0.60},\n    \"has_face\": true,\n    \"face_confidence\": 0.91\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/security/detections",
+							"host": ["{{base_url}}"],
+							"path": ["api", "security", "detections"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get AI Radar Detection Events",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{homeowner_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/security/detections",
+							"host": ["{{base_url}}"],
+							"path": ["api", "security", "detections"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Arm House Perimeter Security",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{homeowner_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/security/arm",
+							"host": ["{{base_url}}"],
+							"path": ["api", "security", "arm"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Set Global Lighting Brightness",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{homeowner_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"brightness\": 85\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/lighting/brightness",
+							"host": ["{{base_url}}"],
+							"path": ["api", "lighting", "brightness"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "6. Resident Management",
+			"item": [
+				{
+					"name": "Add Resident to House",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{homeowner_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"sarah.doe@vigilis.com\",\n    \"password\": \"ResidentPass123!\",\n    \"first_name\": \"Sarah\",\n    \"last_name\": \"Doe\",\n    \"phone_number\": \"+237659476765\",\n    \"relationship_to_owner\": \"Spouse\",\n    \"permissions\": {\n        \"can_control_lights\": true,\n        \"can_view_cameras\": true,\n        \"can_arm_security\": false,\n        \"can_disarm_security\": false,\n        \"can_trigger_emergency\": true,\n        \"can_manage_devices\": false\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/residents",
+							"host": ["{{base_url}}"],
+							"path": ["api", "residents"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Residents in House",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{homeowner_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/residents",
+							"host": ["{{base_url}}"],
+							"path": ["api", "residents"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Resident Permissions",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{homeowner_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"relationship_to_owner\": \"Spouse\",\n    \"is_active\": true,\n    \"permissions\": {\n        \"can_control_lights\": true,\n        \"can_view_cameras\": false,\n        \"can_arm_security\": false,\n        \"can_disarm_security\": false,\n        \"can_trigger_emergency\": true,\n        \"can_manage_devices\": false\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/residents/{{resident_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "residents", "{{resident_id}}"]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:5000",
+			"type": "string"
+		}
+	]
+}

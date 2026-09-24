@@ -1,11 +1,14 @@
 const errorHandler = (err, req, res, next) => {
   console.error('🔥 [API Error]:', err.message || err);
 
-  // MySQL / Sequelize Connection Error (e.g. XAMPP not started)
+  // MySQL / Sequelize Connection Error
   if (err.name === 'SequelizeConnectionRefusedError' || err.original?.code === 'ECONNREFUSED') {
+    const isLocal = !process.env.MYSQLHOST && (!process.env.DB_HOST || process.env.DB_HOST === '127.0.0.1' || process.env.DB_HOST === 'localhost');
     return res.status(503).json({
       success: false,
-      message: 'Database Connection Refused (127.0.0.1:3306). Please open your XAMPP Control Panel and start MySQL.',
+      message: isLocal
+        ? 'Database Connection Refused. Please start MySQL in your XAMPP Control Panel.'
+        : 'Cloud Database Connection Refused. Please verify Railway MySQL database service is running and variables are connected.',
     });
   }
 

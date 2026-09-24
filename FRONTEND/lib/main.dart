@@ -9,7 +9,10 @@ import 'screens/admin/admin_dashboard.dart';
 import 'screens/homeowner/homeowner_dashboard.dart';
 import 'screens/resident/resident_dashboard.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await ApiService.init();
+
   final apiService = ApiService();
   final authProvider = AuthProvider(apiService);
 

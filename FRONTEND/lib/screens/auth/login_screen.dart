@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_provider.dart';
+import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/glass_card.dart';
 
@@ -277,6 +278,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     padding: const EdgeInsets.all(24),
                     child: _isSignUpMode ? _buildSignUpForm(auth) : _buildLoginForm(auth),
                   ),
+                  const SizedBox(height: 18),
+                  _buildServerSelectorBadge(),
                 ],
               ),
             ),
@@ -447,6 +450,340 @@ class _LoginScreenState extends State<LoginScreen> {
               : const Text('CREATE HOUSE & ACCOUNT'),
         ),
       ],
+    );
+  }
+
+  Widget _buildServerSelectorBadge() {
+    final isCloud = ApiService.isUsingRemote;
+    final serverName = isCloud ? 'Railway Cloud' : 'Local Backend';
+    final serverColor = isCloud ? AppTheme.statusSafe : AppTheme.accentCyan;
+
+    return Center(
+      child: InkWell(
+        onTap: _showServerConfigDialog,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: AppTheme.primarySurface.withOpacity(0.8),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: serverColor.withOpacity(0.35)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: serverColor,
+                  boxShadow: [
+                    BoxShadow(color: serverColor.withOpacity(0.6), blurRadius: 6),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Server: $serverName',
+                style: const TextStyle(
+                  color: AppTheme.textDim,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.tune_rounded, size: 14, color: AppTheme.textDim),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showServerConfigDialog() {
+    bool isCloud = ApiService.useRemoteBackend && ApiService.customServerUrl == null;
+    final customUrlCtrl = TextEditingController(
+      text: ApiService.customServerUrl ?? ApiService.defaultLocalUrl,
+    );
+    bool isTesting = false;
+    String? testResult;
+    bool? testSuccess;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppTheme.primarySurface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: Colors.white12),
+              ),
+              title: const Row(
+                children: [
+                  Icon(Icons.dns_rounded, color: AppTheme.accentCyan, size: 22),
+                  SizedBox(width: 10),
+                  Text(
+                    'Backend Server',
+                    style: TextStyle(color: AppTheme.textLight, fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 380,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Choose where your app sends API requests. You can easily switch between your Railway deployment and local development without touching backend code.',
+                      style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.4),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Railway Cloud Option
+                    InkWell(
+                      onTap: () {
+                        setDialogState(() {
+                          isCloud = true;
+                          testResult = null;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isCloud ? AppTheme.accentBlue.withOpacity(0.18) : Colors.white.withOpacity(0.03),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isCloud ? AppTheme.accentCyan : Colors.white10,
+                            width: isCloud ? 1.5 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Radio<bool>(
+                              value: true,
+                              groupValue: isCloud,
+                              activeColor: AppTheme.accentCyan,
+                              onChanged: (val) {
+                                setDialogState(() {
+                                  isCloud = true;
+                                  testResult = null;
+                                });
+                              },
+                            ),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Railway Cloud (Production)',
+                                    style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'defense-project-production.up.railway.app',
+                                    style: TextStyle(color: AppTheme.statusSafe, fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Local Backend Option
+                    InkWell(
+                      onTap: () {
+                        setDialogState(() {
+                          isCloud = false;
+                          testResult = null;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: !isCloud ? AppTheme.accentBlue.withOpacity(0.18) : Colors.white.withOpacity(0.03),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: !isCloud ? AppTheme.accentCyan : Colors.white10,
+                            width: !isCloud ? 1.5 : 1,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Radio<bool>(
+                                  value: false,
+                                  groupValue: isCloud,
+                                  activeColor: AppTheme.accentCyan,
+                                  onChanged: (val) {
+                                    setDialogState(() {
+                                      isCloud = false;
+                                      testResult = null;
+                                    });
+                                  },
+                                ),
+                                const Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Local Development Server',
+                                        style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.bold, fontSize: 13),
+                                      ),
+                                      SizedBox(height: 2),
+                                      Text(
+                                        'Run backend locally with npm run dev',
+                                        style: TextStyle(color: AppTheme.textDim, fontSize: 11),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (!isCloud) ...[
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: customUrlCtrl,
+                                style: const TextStyle(fontSize: 12),
+                                decoration: InputDecoration(
+                                  labelText: 'Local API URL',
+                                  labelStyle: const TextStyle(fontSize: 12),
+                                  hintText: 'e.g. http://192.168.1.130:5000/api',
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(Icons.refresh, size: 16),
+                                    tooltip: 'Reset to default local URL',
+                                    onPressed: () {
+                                      setDialogState(() {
+                                        customUrlCtrl.text = ApiService.defaultLocalUrl;
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    if (testResult != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: (testSuccess ?? false)
+                              ? AppTheme.statusSafe.withOpacity(0.12)
+                              : AppTheme.statusDanger.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: (testSuccess ?? false) ? AppTheme.statusSafe : AppTheme.statusDanger,
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              (testSuccess ?? false) ? Icons.check_circle : Icons.error_outline,
+                              color: (testSuccess ?? false) ? AppTheme.statusSafe : AppTheme.statusDanger,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                testResult!,
+                                style: TextStyle(
+                                  color: (testSuccess ?? false) ? AppTheme.statusSafe : AppTheme.statusDanger,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: isTesting
+                          ? null
+                          : () async {
+                              setDialogState(() {
+                                isTesting = true;
+                                testResult = 'Testing connectivity...';
+                                testSuccess = null;
+                              });
+
+                              final target = isCloud
+                                  ? ApiService.remoteUrl
+                                  : customUrlCtrl.text.trim();
+
+                              final health = await ApiService.checkHealth(target);
+
+                              setDialogState(() {
+                                isTesting = false;
+                                if (health['success'] == true) {
+                                  testSuccess = true;
+                                  testResult = 'Online! Latency: ${health['latencyMs']}ms (${health['data']?['service'] ?? 'Vigilis API'})';
+                                } else {
+                                  testSuccess = false;
+                                  testResult = 'Failed to reach: ${health['message'] ?? 'Check connection or URL'}';
+                                }
+                              });
+                            },
+                      icon: isTesting
+                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.bolt, size: 16),
+                      label: Text(isTesting ? 'Checking...' : 'Test Connection'),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (isCloud) {
+                      await ApiService.setServerMode(isRemote: true);
+                    } else {
+                      final url = customUrlCtrl.text.trim();
+                      await ApiService.setServerMode(
+                        isRemote: false,
+                        customUrl: url.isNotEmpty ? url : null,
+                      );
+                    }
+                    if (mounted) {
+                      setState(() {});
+                      Navigator.of(ctx).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Connected to: ${ApiService.baseUrl}'),
+                          backgroundColor: AppTheme.accentBlue,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Save & Connect'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

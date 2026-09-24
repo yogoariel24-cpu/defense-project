@@ -3,12 +3,120 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 class ApiService {
-  static String get baseUrl {
+  /// Deployed production Railway URL
+  static const String remoteUrl = 'https://defense-project-production.up.railway.app/api';
+
+  /// Default local development URL based on platform
+  static String get defaultLocalUrl {
     if (!kIsWeb && Platform.isAndroid) {
-      return 'http://192.168.1.130:5000/api'; // Local network IP for real device
+      return 'http://192.168.1.130:5000/api'; // Local network IP for Android device
     }
     return 'http://localhost:5000/api'; // Windows desktop, Web, macOS, iOS
+  }
+
+  /// Active server mode: true = Railway Cloud, false = Local Development
+  /// Set this to false in code or use the in-app server switcher to run locally
+  static bool useRemoteBackend = true;
+
+  /// Custom override URL (if set by user in UI)
+  static String? customServerUrl;
+
+  static const String _prefServerModeKey = 'vigilis_server_mode'; // 'cloud', 'local', 'custom'
+  static const String _prefCustomUrlKey = 'vigilis_custom_server_url';
+
+  /// Initializes server settings from persistent SharedPreferences storage
+  static Future<void> init() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final mode = prefs.getString(_prefServerModeKey);
+      final custom = prefs.getString(_prefCustomUrlKey);
+
+      if (custom != null && custom.isNotEmpty) {
+        customServerUrl = custom;
+      }
+
+      if (mode == 'local') {
+        useRemoteBackend = false;
+      } else if (mode == 'custom' && custom != null && custom.isNotEmpty) {
+        useRemoteBackend = false;
+      } else {
+        // Default to Railway Cloud
+        useRemoteBackend = true;
+      }
+    } catch (_) {
+      useRemoteBackend = true;
+    }
+  }
+
+  /// Switch between Railway Cloud and Local backend
+  static Future<void> setServerMode({required bool isRemote, String? customUrl}) async {
+    useRemoteBackend = isRemote;
+    if (customUrl != null && customUrl.trim().isNotEmpty) {
+      customServerUrl = customUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    } else {
+      customServerUrl = null;
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (customServerUrl != null) {
+        await prefs.setString(_prefServerModeKey, 'custom');
+        await prefs.setString(_prefCustomUrlKey, customServerUrl!);
+      } else {
+        await prefs.setString(_prefServerModeKey, isRemote ? 'cloud' : 'local');
+      }
+    } catch (_) {}
+  }
+
+  /// Dynamic Base URL: returns Railway Cloud or Local server
+  static String get baseUrl {
+    if (customServerUrl != null && customServerUrl!.isNotEmpty) {
+      return customServerUrl!;
+    }
+    if (useRemoteBackend) {
+      return remoteUrl;
+    }
+    return defaultLocalUrl;
+  }
+
+  /// Check if currently targeting Railway Cloud
+  static bool get isUsingRemote => useRemoteBackend && (customServerUrl == null || customServerUrl == remoteUrl);
+
+  /// Test connectivity to the active or specified backend
+  static Future<Map<String, dynamic>> checkHealth([String? testUrl]) async {
+    final targetUrl = testUrl ?? baseUrl;
+    final healthUri = targetUrl.endsWith('/api')
+        ? Uri.parse('$targetUrl/health')
+        : Uri.parse('$targetUrl/api/health');
+
+    try {
+      final stopwatch = Stopwatch()..start();
+      final response = await http.get(healthUri).timeout(const Duration(seconds: 10));
+      stopwatch.stop();
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {
+          'success': true,
+          'statusCode': 200,
+          'latencyMs': stopwatch.elapsedMilliseconds,
+          'data': data,
+        };
+      }
+      return {
+        'success': false,
+        'statusCode': response.statusCode,
+        'message': 'HTTP ${response.statusCode}: ${response.reasonPhrase}',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': e.toString(),
+      };
+    }
   }
 
   String? _authToken;
