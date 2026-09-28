@@ -259,7 +259,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           border: Border.all(color: AppTheme.accentCyan.withOpacity(0.4)),
                         ),
                         child: Text(
-                          'Fulfilling Order: ${prefillOrder['device_name']} (\$${prefillOrder['total_price']}) • Ref: ${prefillOrder['payment_reference']}',
+                          'Fulfilling Order: ${prefillOrder['device_name']} (${prefillOrder['total_price']} FCFA) • Ref: ${prefillOrder['payment_reference']}',
                           style: const TextStyle(color: AppTheme.accentCyan, fontSize: 11, fontWeight: FontWeight.w600),
                         ),
                       ),
@@ -885,7 +885,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Text(
-                                              'Ordered: ${ord['device_name']} (\$${ord['total_price']}) • Ref: ${ord['payment_reference']}',
+                                              'Ordered: ${ord['device_name']} (${ord['total_price']} FCFA) • Ref: ${ord['payment_reference']}',
                                               style: const TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.w600),
                                             ),
                                           ),

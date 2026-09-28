@@ -150,7 +150,7 @@ const login = async (req, res, next) => {
           subscription_plan: user.homeownerProfile?.subscription_plan || 'STANDARD',
           payment_method: user.homeownerProfile?.payment_method || null,
           payment_reference: user.homeownerProfile?.payment_reference || null,
-          payment_amount: user.homeownerProfile?.payment_amount || 49.99,
+          payment_amount: user.homeownerProfile?.payment_amount || 25000,
           rejection_reason: user.homeownerProfile?.rejection_reason || null,
         },
       },
@@ -193,7 +193,7 @@ const registerHomeowner = async (req, res, next) => {
       emergency_phone: phone_number?.trim() || null,
       subscription_plan: 'STANDARD',
       payment_status: 'PENDING',
-      payment_amount: 49.99,
+      payment_amount: 25000,
     });
 
     const finalHouseId = house_id || `HOUSE_${Math.floor(100 + Math.random() * 900)}`;
@@ -283,7 +283,7 @@ const getCurrentUser = async (req, res, next) => {
           subscription_plan: user.homeownerProfile?.subscription_plan || 'STANDARD',
           payment_method: user.homeownerProfile?.payment_method || null,
           payment_reference: user.homeownerProfile?.payment_reference || null,
-          payment_amount: user.homeownerProfile?.payment_amount || 49.99,
+          payment_amount: user.homeownerProfile?.payment_amount || 25000,
           rejection_reason: user.homeownerProfile?.rejection_reason || null,
         },
       },

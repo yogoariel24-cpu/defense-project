@@ -39,7 +39,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     super.dispose();
   }
 
-  double get _planPrice => _selectedPlan == 'PREMIUM' ? 99.99 : 49.99;
+  double get _planPrice => _selectedPlan == 'PREMIUM' ? 50000.0 : 25000.0;
 
   Future<void> _checkStatus() async {
     setState(() => _isChecking = true);
@@ -308,11 +308,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
           Row(
             children: [
               Expanded(
-                child: _buildPlanCard('STANDARD', 'Standard Shield', '\$49.99/mo', 'Full AI Security & IoT Automation'),
+                child: _buildPlanCard('STANDARD', 'Standard Shield', '25,000 FCFA/mo', 'Full AI Security & IoT Automation'),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _buildPlanCard('PREMIUM', 'Pro Security Hub', '\$99.99/mo', 'Dedicated 24/7 Dispatch Radar'),
+                child: _buildPlanCard('PREMIUM', 'Pro Security Hub', '50,000 FCFA/mo', 'Dedicated 24/7 Dispatch Radar'),
               ),
             ],
           ),
@@ -357,7 +357,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             onPressed: _isSubmitting ? null : _submitPayment,
             child: _isSubmitting
                 ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : Text('PAY \$${_planPrice.toStringAsFixed(2)} & SUBMIT FOR VALIDATION', style: const TextStyle(fontWeight: FontWeight.w800)),
+                : Text('PAY ${_planPrice.toInt()} FCFA & SUBMIT FOR VALIDATION', style: const TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
       ),

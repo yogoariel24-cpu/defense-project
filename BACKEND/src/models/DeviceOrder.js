@@ -16,7 +16,7 @@ const DeviceOrder = sequelize.define('device_orders', {
     allowNull: false,
   },
   device_type: {
-    type: DataTypes.ENUM('CAMERA', 'SMART_LIGHT', 'MOTION_SENSOR', 'ALARM_HUB'),
+    type: DataTypes.STRING(64),
     allowNull: false,
   },
   device_name: {

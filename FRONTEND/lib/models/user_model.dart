@@ -33,7 +33,7 @@ class UserModel {
     this.subscriptionPlan = 'STANDARD',
     this.paymentMethod,
     this.paymentReference,
-    this.paymentAmount = 49.99,
+    this.paymentAmount = 25000.0,
     this.rejectionReason,
   });
 
@@ -98,8 +98,8 @@ class UserModel {
       paymentMethod: json['payment_method'] ?? json['paymentMethod'],
       paymentReference: json['payment_reference'] ?? json['paymentReference'],
       paymentAmount: json['payment_amount'] != null
-          ? (double.tryParse(json['payment_amount'].toString()) ?? 49.99)
-          : (json['paymentAmount'] != null ? (double.tryParse(json['paymentAmount'].toString()) ?? 49.99) : 49.99),
+          ? (double.tryParse(json['payment_amount'].toString()) ?? 25000.0)
+          : (json['paymentAmount'] != null ? (double.tryParse(json['paymentAmount'].toString()) ?? 25000.0) : 25000.0),
       rejectionReason: json['rejection_reason'] ?? json['rejectionReason'],
     );
   }

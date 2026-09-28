@@ -10,21 +10,22 @@ const {
   AccessHistory,
   SecurityEvent,
   Notification,
-  SmartLight,
-  LightSensor,
-  MotionSensor,
   Camera,
   EmergencyEvent,
 } = require('../models');
 const { calculateFaceDistance } = require('../services/aiVisionEngine');
 const { dispatchEmergency } = require('../services/emergencyService');
+const aiFacialService = require('../services/aiFacialService');
 
 /**
- * Resolves a device by its identifier and verifies its house association.
+ * Resolves a device by its identifier and marks it online with latest heartbeat.
  */
 const resolveDevice = async (device_identifier) => {
   if (!device_identifier) return null;
-  const device = await Device.findOne({ where: { device_identifier } });
+  const device = await Device.findOne({
+    where: { device_identifier },
+    include: [{ model: Room, as: 'room' }],
+  });
   if (device) {
     device.last_heartbeat_at = new Date();
     device.status = 'ONLINE';
@@ -34,28 +35,40 @@ const resolveDevice = async (device_identifier) => {
 };
 
 /**
- * 1. RFID Access Attempt Endpoint
- * Received from RFID reader IoT device.
- * Payload: { card_uid, device_identifier, room_id?, timestamp? }
+ * 1. Unified Access Request Endpoint (RFID Access Control Workflow)
+ * Handles: POST /api/iot/access/request and POST /api/iot/access/rfid
+ * Enforces:
+ *   - Device verification & House isolation
+ *   - Card existence & Active status
+ *   - Resident existence & Active account
+ *   - Specific Room-based authorization in this house
+ *   - Optional Facial Verification requirement check
+ *   - Audit logging (AccessHistory) & Security alerts (SecurityEvent)
+ *   - FAIL-CLOSED principle
  */
-const handleRfidAccessAttempt = async (req, res, next) => {
+const handleAccessRequest = async (req, res, next) => {
   try {
-    const { card_uid, device_identifier, room_id, timestamp = new Date() } = req.body;
+    const card_uid = req.body.cardUid || req.body.card_uid;
+    const device_identifier = req.body.deviceId || req.body.device_identifier;
+    const room_id = req.body.roomId || req.body.room_id;
+    const timestamp = req.body.timestamp || new Date();
 
     if (!card_uid || !device_identifier) {
       return res.status(400).json({
         success: false,
+        authorized: false,
         granted: false,
         door_unlocked: false,
-        reason: 'card_uid and device_identifier are required.',
+        reason: 'cardUid and deviceId are required.',
       });
     }
 
-    // 1. Enforce Device Ownership & House Isolation
+    // Step 1: Resolve Device & Enforce House Isolation
     const device = await resolveDevice(device_identifier);
     if (!device) {
       return res.status(404).json({
         success: false,
+        authorized: false,
         granted: false,
         door_unlocked: false,
         reason: 'Device not recognized or not registered.',
@@ -63,6 +76,7 @@ const handleRfidAccessAttempt = async (req, res, next) => {
     }
 
     const houseId = device.house_id;
+    const house = await House.findByPk(houseId);
     const targetRoomId = room_id || device.room_id || null;
 
     let targetRoom = null;
@@ -70,21 +84,27 @@ const handleRfidAccessAttempt = async (req, res, next) => {
       targetRoom = await Room.findOne({ where: { id: targetRoomId, house_id: houseId } });
     }
 
-    // 2. Enforce RFID Ownership & Validity
     const formattedUid = card_uid.trim().toUpperCase();
+
+    // Step 2: Query RFID Card for this House
     const card = await RfidCard.findOne({
       where: { house_id: houseId, card_uid: formattedUid },
       include: [
         {
           model: Resident,
           as: 'resident',
-          include: [{ model: User, as: 'user', attributes: ['id', 'first_name', 'last_name', 'email'] }],
+          include: [
+            { model: User, as: 'user', attributes: ['id', 'first_name', 'last_name', 'email'] },
+            { model: FaceProfile, as: 'faceProfile' },
+          ],
         },
       ],
     });
 
+    const io = req.app.get('io');
+
+    // Case 2A: Unknown RFID Card -> FAIL CLOSED
     if (!card) {
-      // Unknown RFID Card
       await AccessHistory.create({
         house_id: houseId,
         room_id: targetRoomId,
@@ -96,8 +116,31 @@ const handleRfidAccessAttempt = async (req, res, next) => {
         timestamp,
       });
 
+      await SecurityEvent.create({
+        house_id: houseId,
+        device_id: device.id,
+        event_type: 'UNKNOWN_CARD_ATTEMPT',
+        severity: 'MEDIUM',
+        description: `Unauthorized access attempt with unknown RFID card [${formattedUid}] at ${device.name}.`,
+        metadata: { card_uid: formattedUid, device_identifier },
+        timestamp,
+      });
+
+      if (io) {
+        io.to(`house_${houseId}`).emit('access_attempt', {
+          houseId,
+          method: 'RFID',
+          status: 'DENIED',
+          cardUid: formattedUid,
+          reason: 'Unregistered RFID card',
+          roomName: targetRoom ? targetRoom.name : 'Entrance',
+          timestamp,
+        });
+      }
+
       return res.status(403).json({
         success: true,
+        authorized: false,
         granted: false,
         status: 'DENIED',
         door_unlocked: false,
@@ -105,6 +148,7 @@ const handleRfidAccessAttempt = async (req, res, next) => {
       });
     }
 
+    // Case 2B: Inactive / Disabled RFID Card -> FAIL CLOSED
     if (card.status !== 'ACTIVE') {
       await AccessHistory.create({
         house_id: houseId,
@@ -119,8 +163,31 @@ const handleRfidAccessAttempt = async (req, res, next) => {
         timestamp,
       });
 
+      await SecurityEvent.create({
+        house_id: houseId,
+        device_id: device.id,
+        resident_id: card.resident_id,
+        event_type: 'DISABLED_CARD_ATTEMPT',
+        severity: 'MEDIUM',
+        description: `Access attempt using deactivated card [${card.label || formattedUid}] at ${device.name}.`,
+        timestamp,
+      });
+
+      if (io) {
+        io.to(`house_${houseId}`).emit('access_attempt', {
+          houseId,
+          method: 'RFID',
+          status: 'DENIED',
+          cardUid: formattedUid,
+          reason: `Card is ${card.status.toLowerCase()}`,
+          roomName: targetRoom ? targetRoom.name : 'Entrance',
+          timestamp,
+        });
+      }
+
       return res.status(403).json({
         success: true,
+        authorized: false,
         granted: false,
         status: 'DENIED',
         door_unlocked: false,
@@ -128,7 +195,7 @@ const handleRfidAccessAttempt = async (req, res, next) => {
       });
     }
 
-    // 3. Check Resident Status & Account Active
+    // Step 3: Check Resident Account Validity
     const resident = card.resident;
     if (card.resident_id && (!resident || !resident.is_active)) {
       await AccessHistory.create({
@@ -145,6 +212,7 @@ const handleRfidAccessAttempt = async (req, res, next) => {
 
       return res.status(403).json({
         success: true,
+        authorized: false,
         granted: false,
         status: 'DENIED',
         door_unlocked: false,
@@ -152,36 +220,26 @@ const handleRfidAccessAttempt = async (req, res, next) => {
       });
     }
 
-    // 4. Enforce Dynamic Room-Based Permissions from Database
+    // Step 4: Room-Based Access Authorization
     if (targetRoom && resident) {
       const roomPermission = await RoomPermission.findOne({
         where: { house_id: houseId, room_id: targetRoom.id, resident_id: resident.id },
       });
 
+      let roomAllowed = true;
+      let denyReason = null;
+
       if (roomPermission) {
         if (!roomPermission.is_active || !roomPermission.can_access) {
-          await AccessHistory.create({
-            house_id: houseId,
-            room_id: targetRoom.id,
-            device_id: device.id,
-            resident_id: resident.id,
-            rfid_card_id: card.id,
-            access_method: 'RFID',
-            status: 'DENIED',
-            denial_reason: 'ROOM_PERMISSION_DENIED',
-            timestamp,
-          });
-
-          return res.status(403).json({
-            success: true,
-            granted: false,
-            status: 'DENIED',
-            door_unlocked: false,
-            reason: `Access to ${targetRoom.name} is restricted for this resident.`,
-          });
+          roomAllowed = false;
+          denyReason = 'ROOM_PERMISSION_DENIED';
         }
       } else if (targetRoom.is_restricted) {
-        // Room is restricted and no explicit permission granted in DB
+        roomAllowed = false;
+        denyReason = 'RESTRICTED_ROOM_NO_PERMISSION';
+      }
+
+      if (!roomAllowed) {
         await AccessHistory.create({
           house_id: houseId,
           room_id: targetRoom.id,
@@ -190,23 +248,71 @@ const handleRfidAccessAttempt = async (req, res, next) => {
           rfid_card_id: card.id,
           access_method: 'RFID',
           status: 'DENIED',
-          denial_reason: 'RESTRICTED_ROOM_NO_PERMISSION',
+          denial_reason: denyReason,
           timestamp,
         });
 
+        await SecurityEvent.create({
+          house_id: houseId,
+          device_id: device.id,
+          resident_id: resident.id,
+          event_type: 'UNAUTHORIZED_ROOM_ACCESS',
+          severity: 'LOW',
+          description: `Resident ${resident.user ? resident.user.first_name : ''} denied entry to restricted room [${targetRoom.name}].`,
+          timestamp,
+        });
+
+        if (io) {
+          io.to(`house_${houseId}`).emit('access_attempt', {
+            houseId,
+            method: 'RFID',
+            status: 'DENIED',
+            cardUid: formattedUid,
+            reason: `Restricted room: ${targetRoom.name}`,
+            roomName: targetRoom.name,
+            timestamp,
+          });
+        }
+
         return res.status(403).json({
           success: true,
+          authorized: false,
           granted: false,
           status: 'DENIED',
           door_unlocked: false,
-          reason: `Access to restricted room ${targetRoom.name} requires explicit permission.`,
+          reason: `Access to ${targetRoom.name} is restricted for this resident.`,
         });
       }
     }
 
-    // 5. Access Granted: Unlock door and record history
+    const residentName = resident?.user
+      ? `${resident.user.first_name} ${resident.user.last_name}`
+      : (card.label || 'Authorized Resident');
+
+    // Step 5: Check if Facial Verification is required
+    const requiresFace = (house && house.require_face_verification) ||
+                         (resident && resident.faceProfile && resident.faceProfile.is_active && house?.access_control_mode === 'STRICT_BIOMETRIC');
+
+    if (requiresFace) {
+      return res.status(200).json({
+        success: true,
+        authorized: true,
+        granted: false,
+        requiresFaceVerification: true,
+        residentId: resident ? resident.id : null,
+        residentName,
+        cardId: card.id,
+        roomId: targetRoom ? targetRoom.id : null,
+        deviceId: device.id,
+        message: 'RFID verified. Facial verification required before door opens.',
+      });
+    }
+
+    // Step 6: Final Access Granted (Direct RFID or Face not strictly required)
     card.last_used_at = new Date();
     await card.save();
+
+    const unlockDuration = house?.door_open_duration_seconds || 5;
 
     const accessLog = await AccessHistory.create({
       house_id: houseId,
@@ -219,12 +325,6 @@ const handleRfidAccessAttempt = async (req, res, next) => {
       timestamp,
     });
 
-    const residentName = resident?.user
-      ? `${resident.user.first_name} ${resident.user.last_name}`
-      : card.label;
-
-    // Real-time broadcast to Flutter dashboard
-    const io = req.app.get('io');
     if (io) {
       io.to(`house_${houseId}`).emit('access_attempt', {
         houseId,
@@ -240,11 +340,12 @@ const handleRfidAccessAttempt = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
+      authorized: true,
       granted: true,
       status: 'GRANTED',
       door_unlocked: true,
-      unlock_duration_seconds: 5,
-      message: `Access granted. Door unlocked for ${residentName}.`,
+      unlock_duration_seconds: unlockDuration,
+      message: `Access granted. Welcome ${residentName}.`,
       data: {
         resident: resident ? { id: resident.id, name: residentName } : null,
         room: targetRoom ? { id: targetRoom.id, name: targetRoom.name } : null,
@@ -258,11 +359,161 @@ const handleRfidAccessAttempt = async (req, res, next) => {
 };
 
 /**
- * 2. Facial Recognition with Face Embedding Access Attempt Endpoint
- * Received from edge camera/IoT node.
- * Evaluates face embedding vector against registered resident embeddings.
- * Unlocks door if: recognized face + registered resident + authorized active account + room permission.
- * Payload: { face_embedding, device_identifier, room_id?, timestamp? }
+ * Alias for backward compatibility with ESP32 /access/rfid
+ */
+const handleRfidAccessAttempt = handleAccessRequest;
+
+/**
+ * 2. Facial Verification Final Decision Endpoint
+ * Received from ESP32-CAM or Node.js workflow after RFID authorization.
+ * Payload: { image (base64 or file), expectedResidentId, deviceId/device_identifier, roomId/room_id }
+ */
+const handleFaceVerification = async (req, res, next) => {
+  try {
+    const {
+      image,
+      imageBase64,
+      image_base64,
+      expectedResidentId,
+      residentId,
+      deviceId,
+      device_identifier,
+      roomId,
+      room_id,
+      timestamp = new Date(),
+    } = req.body;
+
+    const imgData = image || imageBase64 || image_base64;
+    const targetResidentId = expectedResidentId || residentId;
+    const devId = deviceId || device_identifier;
+    const targetRoomId = roomId || room_id;
+
+    if (!imgData) {
+      return res.status(400).json({
+        success: false,
+        authorized: false,
+        granted: false,
+        door_unlocked: false,
+        reason: 'Image data is required for facial verification.',
+      });
+    }
+
+    const device = await resolveDevice(devId);
+    if (!device) {
+      return res.status(404).json({
+        success: false,
+        authorized: false,
+        granted: false,
+        door_unlocked: false,
+        reason: 'Device not recognized.',
+      });
+    }
+
+    const houseId = device.house_id;
+    const house = await House.findByPk(houseId);
+
+    // Call Python AI Facial Recognition Microservice
+    const aiResult = await aiFacialService.verifyFace(imgData, targetResidentId);
+    const io = req.app.get('io');
+
+    // Case 2A: Face Not Recognized or Mismatched -> FAIL CLOSED
+    if (!aiResult.recognized || (targetResidentId && aiResult.residentId !== targetResidentId)) {
+      await AccessHistory.create({
+        house_id: houseId,
+        room_id: targetRoomId || null,
+        device_id: device.id,
+        resident_id: targetResidentId || null,
+        access_method: 'FACIAL_RECOGNITION',
+        status: 'DENIED',
+        denial_reason: 'FACIAL_VERIFICATION_FAILED',
+        metadata: { confidence: aiResult.confidence, reason: aiResult.reason },
+        timestamp,
+      });
+
+      await SecurityEvent.create({
+        house_id: houseId,
+        device_id: device.id,
+        resident_id: targetResidentId || null,
+        event_type: 'FACIAL_VERIFICATION_FAILURE',
+        severity: 'MEDIUM',
+        description: `Facial verification failed at ${device.name}. Face did not match authorized resident.`,
+        metadata: { confidence: aiResult.confidence },
+        timestamp,
+      });
+
+      if (io) {
+        io.to(`house_${houseId}`).emit('access_attempt', {
+          houseId,
+          method: 'FACIAL_RECOGNITION',
+          status: 'DENIED',
+          reason: 'Facial verification failed',
+          timestamp,
+        });
+      }
+
+      return res.status(403).json({
+        success: true,
+        authorized: false,
+        granted: false,
+        status: 'DENIED',
+        door_unlocked: false,
+        confidence: aiResult.confidence,
+        reason: aiResult.reason || 'Facial verification failed. Door remains closed.',
+      });
+    }
+
+    // Case 2B: Facial Match Confirmed -> ACCESS GRANTED
+    const resident = await Resident.findOne({
+      where: { id: targetResidentId || aiResult.residentId, house_id: houseId },
+      include: [{ model: User, as: 'user', attributes: ['first_name', 'last_name'] }],
+    });
+
+    const residentName = resident?.user
+      ? `${resident.user.first_name} ${resident.user.last_name}`
+      : 'Authorized Resident';
+
+    const accessLog = await AccessHistory.create({
+      house_id: houseId,
+      room_id: targetRoomId || null,
+      device_id: device.id,
+      resident_id: resident ? resident.id : null,
+      access_method: 'FACIAL_RECOGNITION',
+      status: 'GRANTED',
+      metadata: { confidence: aiResult.confidence },
+      timestamp,
+    });
+
+    const unlockDuration = house?.door_open_duration_seconds || 5;
+
+    if (io) {
+      io.to(`house_${houseId}`).emit('access_attempt', {
+        houseId,
+        method: 'FACIAL_RECOGNITION',
+        status: 'GRANTED',
+        residentName,
+        confidence: aiResult.confidence,
+        timestamp: accessLog.timestamp,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      authorized: true,
+      granted: true,
+      status: 'GRANTED',
+      door_unlocked: true,
+      unlock_duration_seconds: unlockDuration,
+      confidence: aiResult.confidence,
+      residentName,
+      message: `Facial verification confirmed for ${residentName}. Access granted.`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * 3. Direct Face Embedding Access Attempt Endpoint (Mathematical Vector from edge)
  */
 const handleFaceAccessAttempt = async (req, res, next) => {
   try {
@@ -277,49 +528,28 @@ const handleFaceAccessAttempt = async (req, res, next) => {
       });
     }
 
-    if (!Array.isArray(face_embedding)) {
-      return res.status(400).json({
-        success: false,
-        granted: false,
-        door_unlocked: false,
-        reason: 'face_embedding must be a numerical vector array.',
-      });
-    }
-
-    // 1. Enforce Device Ownership & House Isolation
     const device = await resolveDevice(device_identifier);
     if (!device) {
-      return res.status(404).json({
-        success: false,
-        granted: false,
-        door_unlocked: false,
-        reason: 'Device not recognized or not registered.',
-      });
+      return res.status(404).json({ success: false, reason: 'Device not recognized.' });
     }
 
     const houseId = device.house_id;
     const targetRoomId = room_id || device.room_id || null;
 
-    let targetRoom = null;
-    if (targetRoomId) {
-      targetRoom = await Room.findOne({ where: { id: targetRoomId, house_id: houseId } });
-    }
-
-    // 2. Query Registered Residents & Face Profiles for this House
     const activeProfiles = await FaceProfile.findAll({
       where: { house_id: houseId, is_active: true },
       include: [
         {
           model: Resident,
           as: 'resident',
-          include: [{ model: User, as: 'user', attributes: ['id', 'first_name', 'last_name', 'email'] }],
+          include: [{ model: User, as: 'user', attributes: ['id', 'first_name', 'last_name'] }],
         },
       ],
     });
 
     let matchedProfile = null;
     let minDistance = 1.0;
-    const MATCH_THRESHOLD = 0.45; // Euclidean biometric distance threshold
+    const MATCH_THRESHOLD = 0.45;
 
     for (const profile of activeProfiles) {
       if (profile.face_embedding) {
@@ -339,9 +569,7 @@ const handleFaceAccessAttempt = async (req, res, next) => {
       }
     }
 
-    // 3. Face match evaluation
-    if (!matchedProfile) {
-      // Unrecognized face
+    if (!matchedProfile || !matchedProfile.resident || !matchedProfile.resident.is_active) {
       await AccessHistory.create({
         house_id: houseId,
         room_id: targetRoomId,
@@ -349,31 +577,6 @@ const handleFaceAccessAttempt = async (req, res, next) => {
         access_method: 'FACE_EMBEDDING',
         status: 'DENIED',
         denial_reason: 'UNRECOGNIZED_FACE',
-        metadata: { minDistance, device_identifier },
-        timestamp,
-      });
-
-      return res.status(403).json({
-        success: true,
-        granted: false,
-        status: 'DENIED',
-        door_unlocked: false,
-        reason: 'Unrecognized face. Access denied.',
-        data: { minDistance },
-      });
-    }
-
-    // 4. Resident Active Account Check
-    const resident = matchedProfile.resident;
-    if (!resident || !resident.is_active) {
-      await AccessHistory.create({
-        house_id: houseId,
-        room_id: targetRoomId,
-        device_id: device.id,
-        resident_id: resident ? resident.id : null,
-        access_method: 'FACE_EMBEDDING',
-        status: 'DENIED',
-        denial_reason: 'INACTIVE_ACCOUNT',
         metadata: { minDistance },
         timestamp,
       });
@@ -383,68 +586,19 @@ const handleFaceAccessAttempt = async (req, res, next) => {
         granted: false,
         status: 'DENIED',
         door_unlocked: false,
-        reason: 'Resident account is deactivated.',
+        reason: 'Unrecognized face. Access denied.',
       });
     }
 
-    // 5. Room-Based Permission Check
-    if (targetRoom) {
-      const roomPermission = await RoomPermission.findOne({
-        where: { house_id: houseId, room_id: targetRoom.id, resident_id: resident.id },
-      });
+    const resident = matchedProfile.resident;
+    const residentName = resident.user ? `${resident.user.first_name} ${resident.user.last_name}` : 'Resident';
 
-      if (roomPermission) {
-        if (!roomPermission.is_active || !roomPermission.can_access) {
-          await AccessHistory.create({
-            house_id: houseId,
-            room_id: targetRoom.id,
-            device_id: device.id,
-            resident_id: resident.id,
-            access_method: 'FACE_EMBEDDING',
-            status: 'DENIED',
-            denial_reason: 'ROOM_PERMISSION_DENIED',
-            metadata: { minDistance },
-            timestamp,
-          });
-
-          return res.status(403).json({
-            success: true,
-            granted: false,
-            status: 'DENIED',
-            door_unlocked: false,
-            reason: `Access to ${targetRoom.name} is restricted for this resident.`,
-          });
-        }
-      } else if (targetRoom.is_restricted) {
-        await AccessHistory.create({
-          house_id: houseId,
-          room_id: targetRoom.id,
-          device_id: device.id,
-          resident_id: resident.id,
-          access_method: 'FACE_EMBEDDING',
-          status: 'DENIED',
-          denial_reason: 'RESTRICTED_ROOM_NO_PERMISSION',
-          metadata: { minDistance },
-          timestamp,
-        });
-
-        return res.status(403).json({
-          success: true,
-          granted: false,
-          status: 'DENIED',
-          door_unlocked: false,
-          reason: `Access to restricted room ${targetRoom.name} requires explicit permission.`,
-        });
-      }
-    }
-
-    // 6. Access Granted: Unlock door and record history
     matchedProfile.last_verified_at = new Date();
     await matchedProfile.save();
 
-    const accessLog = await AccessHistory.create({
+    await AccessHistory.create({
       house_id: houseId,
-      room_id: targetRoom ? targetRoom.id : null,
+      room_id: targetRoomId,
       device_id: device.id,
       resident_id: resident.id,
       access_method: 'FACE_EMBEDDING',
@@ -453,36 +607,14 @@ const handleFaceAccessAttempt = async (req, res, next) => {
       timestamp,
     });
 
-    const residentName = resident.user
-      ? `${resident.user.first_name} ${resident.user.last_name}`
-      : 'Resident';
-
-    // Real-time broadcast
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`house_${houseId}`).emit('access_attempt', {
-        houseId,
-        method: 'FACE_EMBEDDING',
-        status: 'GRANTED',
-        residentName,
-        roomName: targetRoom ? targetRoom.name : 'Main Door',
-        timestamp: accessLog.timestamp,
-      });
-    }
-
     return res.status(200).json({
       success: true,
       granted: true,
       status: 'GRANTED',
       door_unlocked: true,
       unlock_duration_seconds: 5,
-      message: `Face recognized: ${residentName}. Door unlocked automatically.`,
-      data: {
-        resident: { id: resident.id, name: residentName },
-        room: targetRoom ? { id: targetRoom.id, name: targetRoom.name } : null,
-        distance: minDistance,
-        timestamp: accessLog.timestamp,
-      },
+      message: `Face recognized: ${residentName}. Access granted.`,
+      data: { resident: { id: resident.id, name: residentName }, distance: minDistance },
     });
   } catch (error) {
     next(error);
@@ -490,17 +622,13 @@ const handleFaceAccessAttempt = async (req, res, next) => {
 };
 
 /**
- * 3. IoT Presence / Sensor Event Ingestion Endpoint
- * Receives presence detections, motion events, or verified security alerts.
- * Architectural principle: Detection != Verified Threat.
- * Only genuine threats reach VERIFIED_THREAT status and automatically trigger the emergency response.
- * Payload: { device_identifier, event_type, room_id?, is_verified_threat?, severity?, metadata?, timestamp? }
+ * 4. General Security & Presence Event Ingestion
  */
 const handleIoTEvent = async (req, res, next) => {
   try {
     const {
       device_identifier,
-      event_type = 'PRESENCE_DETECTED',
+      event_type = 'SECURITY_ALERT',
       room_id,
       is_verified_threat = false,
       severity = 'LOW',
@@ -514,118 +642,35 @@ const handleIoTEvent = async (req, res, next) => {
 
     const device = await resolveDevice(device_identifier);
     if (!device) {
-      return res.status(404).json({ success: false, message: 'Device not recognized or not registered.' });
+      return res.status(404).json({ success: false, message: 'Device not recognized.' });
     }
 
     const houseId = device.house_id;
-    const house = await House.findByPk(houseId, {
-      include: [{ model: require('../models').Homeowner, as: 'homeowner', include: [{ model: User, as: 'user' }] }],
+    const house = await House.findByPk(houseId);
+
+    const securityEvent = await SecurityEvent.create({
+      house_id: houseId,
+      device_id: device.id,
+      room_id: room_id || device.room_id || null,
+      event_type,
+      severity: is_verified_threat ? 'CRITICAL' : severity,
+      description: `Security event [${event_type}] captured by ${device.name}.`,
+      metadata: { ...metadata, device_identifier },
+      timestamp,
     });
 
-    if (!house) {
-      return res.status(404).json({ success: false, message: 'House not found.' });
-    }
-
-    const targetRoomId = room_id || device.room_id || null;
-    let targetRoom = null;
-    if (targetRoomId) {
-      targetRoom = await Room.findOne({ where: { id: targetRoomId, house_id: houseId } });
-    }
-
-    const isArmed = house.security_status === 'ARMED_AWAY' || house.security_status === 'ARMED_HOME';
-
-    // Determine status: Detection != Confirmed Threat
-    // A presence event alone is standard 'DETECTED' / 'LOGGED'.
-    // Only genuine verified threats (e.g. system is armed and verified threat confirmed) reach VERIFIED_THREAT!
-    let threatStatus = 'DETECTED';
-    let isGenuineThreat = Boolean(is_verified_threat);
-
-    if (isArmed && (event_type === 'DOOR_TAMPER' || event_type === 'INTRUSION_ALARM')) {
-      isGenuineThreat = true;
-    }
-
-    let securityEvent = null;
     const io = req.app.get('io');
-
-    if (isGenuineThreat) {
-      threatStatus = 'VERIFIED_THREAT';
-
-      // Create high-priority SecurityEvent
-      securityEvent = await SecurityEvent.create({
-        house_id: houseId,
-        device_id: device.id,
-        event_type: event_type === 'PRESENCE_DETECTED' ? 'INTRUSION_ALARM' : event_type,
-        severity: severity === 'LOW' ? 'HIGH' : severity,
-        description: `🚨 VERIFIED THREAT: Genuine security breach detected by ${device.name} in ${targetRoom ? targetRoom.name : 'Perimeter'} during ${house.security_status}!`,
-        status: 'CONFIRMED_THREAT',
-      });
-
-      // Automated security response: Automatically dispatch emergency WITHOUT requiring homeowner manual initiation!
-      dispatchEmergency({
+    if (io) {
+      io.to(`house_${houseId}`).emit('security_alert', {
         houseId,
-        securityEventId: securityEvent.id,
-        source: 'AUTOMATIC_SECURITY_SYSTEM',
-        notes: `Automated response triggered: Verified threat at ${device.name} (${targetRoom ? targetRoom.name : 'Perimeter'}).`,
-        io,
-      }).catch((err) => console.error('Automated emergency dispatch error:', err.message));
-
-      // In-App Notification
-      const homeownerUser = house.homeowner?.user;
-      await Notification.create({
-        house_id: houseId,
-        user_id: homeownerUser?.id || null,
-        type: 'SECURITY_ALERT',
-        title: '🚨 VERIFIED SECURITY THREAT',
-        message: securityEvent.description,
-        data: {
-          security_event_id: securityEvent.id,
-          threat_status: threatStatus,
-          room_id: targetRoomId,
-          device_identifier,
-        },
-      }).catch(() => {});
-
-      // Broadcast high-priority real-time threat alert
-      if (io) {
-        io.to(`house_${houseId}`).emit('security_threat_alert', {
-          houseId,
-          securityEventId: securityEvent.id,
-          threatStatus: 'VERIFIED_THREAT',
-          deviceName: device.name,
-          roomName: targetRoom ? targetRoom.name : 'Perimeter',
-          description: securityEvent.description,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    } else {
-      // Normal presence or telemetry detection
-      threatStatus = 'DETECTED';
-
-      if (io) {
-        io.to(`house_${houseId}`).emit('iot_detection_event', {
-          houseId,
-          threatStatus: 'DETECTED',
-          eventType: event_type,
-          deviceName: device.name,
-          roomName: targetRoom ? targetRoom.name : 'Living Space',
-          metadata,
-          timestamp: new Date().toISOString(),
-        });
-      }
+        event: securityEvent,
+      });
     }
 
     return res.status(200).json({
       success: true,
-      message: isGenuineThreat ? 'Verified threat registered. Automated response dispatched.' : 'IoT event recorded.',
-      data: {
-        threatStatus,
-        isVerifiedThreat: isGenuineThreat,
-        eventType: event_type,
-        deviceId: device.id,
-        room: targetRoom ? { id: targetRoom.id, name: targetRoom.name } : null,
-        securityEvent: securityEvent ? { id: securityEvent.id, status: securityEvent.status } : null,
-        timestamp,
-      },
+      event_id: securityEvent.id,
+      message: 'Security event recorded.',
     });
   } catch (error) {
     next(error);
@@ -633,17 +678,17 @@ const handleIoTEvent = async (req, res, next) => {
 };
 
 /**
- * 4. Device Heartbeat
- * Payload: { device_identifier, status, ip_address, firmware_version }
+ * 5. Device Heartbeat
  */
 const handleDeviceHeartbeat = async (req, res, next) => {
   try {
     const { device_identifier, status = 'ONLINE', ip_address, firmware_version } = req.body;
+
     if (!device_identifier) {
       return res.status(400).json({ success: false, message: 'device_identifier is required.' });
     }
 
-    const device = await Device.findOne({ where: { device_identifier } });
+    const device = await resolveDevice(device_identifier);
     if (!device) {
       return res.status(404).json({ success: false, message: 'Device not recognized.' });
     }
@@ -654,7 +699,7 @@ const handleDeviceHeartbeat = async (req, res, next) => {
     if (firmware_version) device.firmware_version = firmware_version;
     await device.save();
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: 'Heartbeat acknowledged.',
       data: {
@@ -670,112 +715,21 @@ const handleDeviceHeartbeat = async (req, res, next) => {
 };
 
 /**
- * 5. Ambient Light Sensor Telemetry Endpoint
- * Received from ambient light sensor (e.g. BH1750, LDR on ESP32).
- * Payload: { device_identifier, current_lux, timestamp? }
- */
-const handleLightSensorReading = async (req, res, next) => {
-  try {
-    const { device_identifier, current_lux, timestamp = new Date() } = req.body;
-
-    if (!device_identifier || current_lux === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: 'device_identifier and current_lux are required.',
-      });
-    }
-
-    const device = await resolveDevice(device_identifier);
-    if (!device) {
-      return res.status(404).json({ success: false, message: 'Device not recognized or not registered.' });
-    }
-
-    const houseId = device.house_id;
-    let lightSensor = await LightSensor.findOne({ where: { device_id: device.id } });
-    if (!lightSensor) {
-      lightSensor = await LightSensor.create({
-        device_id: device.id,
-        house_id: houseId,
-        location_name: device.name || 'Room Light Sensor',
-        current_lux: parseFloat(current_lux),
-        threshold_lux: 150.0,
-      });
-    } else {
-      lightSensor.current_lux = parseFloat(current_lux);
-      lightSensor.last_reading_at = timestamp;
-      await lightSensor.save();
-    }
-
-    const house = await House.findByPk(houseId);
-    const houseMode = house?.light_mode || 'AUTO';
-    let shouldActivateLights = false;
-
-    if (houseMode === 'AUTO') {
-      if (lightSensor.current_lux < lightSensor.threshold_lux) {
-        shouldActivateLights = true;
-        await SmartLight.update({ is_on: true }, { where: { house_id: houseId, mode: 'AUTO' } });
-      }
-    }
-
-    // Real-time broadcast to dashboard
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`house_${houseId}`).emit('light_sensor_telemetry', {
-        houseId,
-        deviceIdentifier: device_identifier,
-        currentLux: lightSensor.current_lux,
-        thresholdLux: lightSensor.threshold_lux,
-        mode: houseMode,
-        shouldActivateLights,
-        timestamp,
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: 'Light reading recorded.',
-      data: {
-        current_lux: lightSensor.current_lux,
-        threshold_lux: lightSensor.threshold_lux,
-        mode: houseMode,
-        should_activate_lights: shouldActivateLights,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * 6. Door Lock Status Query Endpoint
- * Queried by door lock actuators / ESP32 to verify lock state.
- * Param: :device_identifier
+ * 6. Door Status Query
  */
 const handleGetDoorStatus = async (req, res, next) => {
   try {
     const { device_identifier } = req.params;
-    if (!device_identifier) {
-      return res.status(400).json({ success: false, message: 'device_identifier parameter is required.' });
-    }
-
     const device = await resolveDevice(device_identifier);
     if (!device) {
       return res.status(404).json({ success: false, message: 'Device not recognized.' });
     }
 
-    const targetRoomId = device.room_id || null;
-    let roomName = 'Main Entrance';
-    if (targetRoomId) {
-      const room = await Room.findByPk(targetRoomId);
-      if (room) roomName = room.name;
-    }
-
     return res.status(200).json({
       success: true,
       device_identifier: device.device_identifier,
-      room_name: roomName,
       is_locked: true,
-      auto_relock_seconds: 10,
+      door_state: 'CLOSED',
     });
   } catch (error) {
     next(error);
@@ -783,151 +737,17 @@ const handleGetDoorStatus = async (req, res, next) => {
 };
 
 /**
- * 7. Smart Light / Relay Commanded State Endpoint
- * Queried by smart relays / ESP32 to fetch desired state.
- * Param: :device_identifier
- */
-const handleGetLightState = async (req, res, next) => {
-  try {
-    const { device_identifier } = req.params;
-    if (!device_identifier) {
-      return res.status(400).json({ success: false, message: 'device_identifier parameter is required.' });
-    }
-
-    const device = await resolveDevice(device_identifier);
-    if (!device) {
-      return res.status(404).json({ success: false, message: 'Device not recognized.' });
-    }
-
-    let light = await SmartLight.findOne({ where: { device_id: device.id } });
-    if (!light) {
-      light = await SmartLight.findOne({ where: { house_id: device.house_id } });
-    }
-
-    if (!light) {
-      return res.status(404).json({ success: false, message: 'No smart light found for this device.' });
-    }
-
-    return res.status(200).json({
-      success: true,
-      device_identifier: device.device_identifier,
-      relay_pin: light.relay_pin || 23,
-      is_on: light.is_on,
-      brightness_percentage: light.brightness_percentage,
-      mode: light.mode,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * 8. Physical Switch State Sync Endpoint
- * Received when physical wall switch or hardware toggles the relay.
- * Payload: { device_identifier, is_on, brightness_percentage?, triggered_by? }
- */
-const handleLightStateSync = async (req, res, next) => {
-  try {
-    const { device_identifier, is_on, brightness_percentage, triggered_by = 'PHYSICAL_WALL_SWITCH' } = req.body;
-
-    if (!device_identifier || is_on === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: 'device_identifier and is_on are required.',
-      });
-    }
-
-    const device = await resolveDevice(device_identifier);
-    if (!device) {
-      return res.status(404).json({ success: false, message: 'Device not recognized.' });
-    }
-
-    let light = await SmartLight.findOne({ where: { device_id: device.id } });
-    if (!light) {
-      light = await SmartLight.findOne({ where: { house_id: device.house_id } });
-    }
-
-    if (!light) {
-      return res.status(404).json({ success: false, message: 'No smart light entity found for this device.' });
-    }
-
-    light.is_on = Boolean(is_on);
-    if (brightness_percentage !== undefined && brightness_percentage >= 0 && brightness_percentage <= 100) {
-      light.brightness_percentage = brightness_percentage;
-    }
-    await light.save();
-
-    // Broadcast to Flutter app
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`house_${device.house_id}`).emit('lighting_update', {
-        type: 'PHYSICAL_SYNC',
-        light,
-        triggered_by,
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: 'Light state synchronized.',
-      data: {
-        device_identifier,
-        is_on: light.is_on,
-        brightness_percentage: light.brightness_percentage,
-        mode: light.mode,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * 9. Device Boot & Startup Configuration Endpoint
- * Queried by ESP32 / cameras on power-up to fetch startup settings.
- * Param: :device_identifier
+ * 7. Device Startup Configuration
  */
 const handleGetDeviceConfig = async (req, res, next) => {
   try {
     const { device_identifier } = req.params;
-    if (!device_identifier) {
-      return res.status(400).json({ success: false, message: 'device_identifier parameter is required.' });
-    }
-
-    const device = await Device.findOne({
-      where: { device_identifier },
-      include: [
-        { model: Room, as: 'room' },
-        { model: SmartLight, as: 'smartLight' },
-        { model: MotionSensor, as: 'motionSensor' },
-        { model: LightSensor, as: 'lightSensor' },
-        { model: Camera, as: 'camera' },
-      ],
-    });
-
+    const device = await resolveDevice(device_identifier);
     if (!device) {
       return res.status(404).json({ success: false, message: 'Device not recognized.' });
     }
 
-    device.status = 'ONLINE';
-    device.last_heartbeat_at = new Date();
-    await device.save().catch(() => {});
-
-    const config = {};
-    if (device.smartLight) {
-      config.relay_pin = device.smartLight.relay_pin;
-      config.is_on = device.smartLight.is_on;
-      config.brightness_percentage = device.smartLight.brightness_percentage;
-    }
-    if (device.motionSensor) {
-      config.sensitivity = device.motionSensor.sensitivity;
-    }
-    if (device.lightSensor) {
-      config.threshold_lux = device.lightSensor.threshold_lux;
-    }
-    if (device.camera) {
-      config.stream_url = device.camera.stream_url;
-    }
+    const house = await House.findByPk(device.house_id);
 
     return res.status(200).json({
       success: true,
@@ -935,9 +755,10 @@ const handleGetDeviceConfig = async (req, res, next) => {
       house_id: device.house_id,
       name: device.name,
       type: device.type,
-      room_name: device.room ? device.room.name : null,
+      servo_open_duration: house?.door_open_duration_seconds || 5,
+      require_face_verification: house?.require_face_verification || false,
+      security_status: house?.security_status || 'DISARMED',
       heartbeat_interval_seconds: 30,
-      config,
     });
   } catch (error) {
     next(error);
@@ -945,39 +766,28 @@ const handleGetDeviceConfig = async (req, res, next) => {
 };
 
 /**
- * 10. Physical Panic Button / Smoke / Gas Detector Emergency Trigger Endpoint
- * Received from wall panic button or safety detector.
- * Payload: { device_identifier, emergency_type?, notes? }
+ * 8. Emergency Panic Trigger
  */
 const handleEmergencyTrigger = async (req, res, next) => {
   try {
     const { device_identifier, emergency_type = 'PANIC_BUTTON', notes } = req.body;
-
-    if (!device_identifier) {
-      return res.status(400).json({ success: false, message: 'device_identifier is required.' });
-    }
-
     const device = await resolveDevice(device_identifier);
     if (!device) {
       return res.status(404).json({ success: false, message: 'Device not recognized.' });
     }
 
-    const houseId = device.house_id;
-    const io = req.app.get('io');
-    const emergencyNotes = notes || `Hardware trigger: ${emergency_type} activated at device ${device.name}.`;
-
     const emergencyEvent = await dispatchEmergency({
-      houseId,
-      source: 'EXTERNAL_TRIGGER',
-      notes: emergencyNotes,
-      io,
+      houseId: device.house_id,
+      source: 'HARDWARE_TRIGGER',
+      notes: notes || `Hardware panic triggered by ${device.name}.`,
+      io: req.app.get('io'),
     });
 
     return res.status(200).json({
       success: true,
       emergency_id: emergencyEvent.id,
       status: emergencyEvent.status,
-      message: 'Emergency alert triggered and emergency contacts notified.',
+      message: 'Emergency alert dispatched to authorities.',
     });
   } catch (error) {
     next(error);
@@ -985,14 +795,13 @@ const handleEmergencyTrigger = async (req, res, next) => {
 };
 
 module.exports = {
+  handleAccessRequest,
   handleRfidAccessAttempt,
+  handleFaceVerification,
   handleFaceAccessAttempt,
   handleIoTEvent,
   handleDeviceHeartbeat,
-  handleLightSensorReading,
   handleGetDoorStatus,
-  handleGetLightState,
-  handleLightStateSync,
   handleGetDeviceConfig,
   handleEmergencyTrigger,
 };

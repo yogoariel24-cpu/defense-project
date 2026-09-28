@@ -4,8 +4,8 @@ import '../../services/auth_provider.dart';
 import '../../services/house_provider.dart';
 import '../../theme/app_theme.dart';
 import 'payment_screen.dart';
+import 'camera_management_screen.dart';
 import 'tabs/overview_tab.dart';
-import 'tabs/lighting_tab.dart';
 import 'tabs/security_tab.dart';
 import 'tabs/devices_tab.dart';
 import 'tabs/residents_tab.dart';
@@ -27,8 +27,8 @@ class _HomeownerDashboardState extends State<HomeownerDashboard> {
 
   final List<({String label, IconData icon, IconData activeIcon})> _tabs = [
     (label: 'Overview', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard_rounded),
+    (label: 'Cameras', icon: Icons.videocam_outlined, activeIcon: Icons.videocam_rounded),
     (label: 'Security', icon: Icons.shield_outlined, activeIcon: Icons.shield_rounded),
-    (label: 'Lighting', icon: Icons.lightbulb_outline_rounded, activeIcon: Icons.lightbulb_rounded),
     (label: 'Devices', icon: Icons.devices_outlined, activeIcon: Icons.devices_rounded),
     (label: 'Residents', icon: Icons.group_outlined, activeIcon: Icons.group_rounded),
   ];
@@ -149,8 +149,8 @@ class _HomeownerDashboardState extends State<HomeownerDashboard> {
           index: _selectedIndex,
           children: const [
             OverviewTab(),
+            CameraManagementScreen(),
             SecurityTab(),
-            LightingTab(),
             DevicesTab(),
             ResidentsTab(),
           ],

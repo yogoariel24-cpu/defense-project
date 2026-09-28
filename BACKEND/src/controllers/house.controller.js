@@ -64,7 +64,7 @@ const submitPayment = async (req, res, next) => {
     homeowner.subscription_plan = subscription_plan || homeowner.subscription_plan || 'STANDARD';
     homeowner.payment_method = payment_method;
     homeowner.payment_reference = payment_reference.trim();
-    homeowner.payment_amount = payment_amount || (homeowner.subscription_plan === 'PREMIUM' ? 99.99 : 49.99);
+    homeowner.payment_amount = payment_amount || (homeowner.subscription_plan === 'PREMIUM' ? 50000 : 25000);
     homeowner.payment_date = new Date();
     homeowner.payment_status = 'SUBMITTED';
     homeowner.rejection_reason = null;
@@ -73,7 +73,7 @@ const submitPayment = async (req, res, next) => {
     await ActivityLog.create({
       user_id: user.id,
       action: 'PAYMENT_SUBMITTED',
-      details: `Payment of $${homeowner.payment_amount} submitted via ${payment_method} (Ref: ${payment_reference})`,
+      details: `Payment of ${homeowner.payment_amount} FCFA submitted via ${payment_method} (Ref: ${payment_reference})`,
     }).catch(() => {});
 
     res.status(200).json({
@@ -147,14 +147,16 @@ const orderDevice = async (req, res, next) => {
     }
 
     const PRICES = {
-      CAMERA: 49.99,
-      SMART_LIGHT: 19.99,
-      MOTION_SENSOR: 24.99,
-      ALARM_HUB: 39.99,
+      ESP32: 35000,
+      CAMERA: 30000,
+      RFID_READER: 10000,
+      SMART_LIGHT: 15000,
+      MOTION_SENSOR: 15000,
+      ALARM_HUB: 25000,
     };
 
-    const unit_price = PRICES[device_type] || 29.99;
-    const total_price = (unit_price * quantity).toFixed(2);
+    const unit_price = PRICES[device_type] || 25000;
+    const total_price = (unit_price * quantity).toFixed(0);
 
     const order = await DeviceOrder.create({
       house_id: houseId,
@@ -174,7 +176,7 @@ const orderDevice = async (req, res, next) => {
       user_id: user.id,
       house_id: houseId,
       action: 'DEVICE_ORDERED',
-      details: `Homeowner ordered ${quantity}x ${device_type} ($${total_price}) via ${payment_method} (Ref: ${payment_reference}). Awaiting Admin provisioning.`,
+      details: `Homeowner ordered ${quantity}x ${device_type} (${total_price} FCFA) via ${payment_method} (Ref: ${payment_reference}). Awaiting Admin provisioning.`,
     }).catch(() => {});
 
     res.status(201).json({

@@ -8,6 +8,7 @@ import '../models/detection_event_model.dart';
 import '../models/room_model.dart';
 import '../models/rfid_card_model.dart';
 import '../models/access_history_model.dart';
+import '../models/camera_model.dart';
 import 'api_service.dart';
 
 class HouseProvider extends ChangeNotifier {
@@ -15,6 +16,7 @@ class HouseProvider extends ChangeNotifier {
 
   HouseModel? _house;
   List<DeviceModel> _devices = [];
+  List<CameraModel> _cameras = [];
   List<SecurityEventModel> _securityEvents = [];
   List<DetectionEventModel> _detectionEvents = [];
   List<ResidentModel> _residents = [];
@@ -44,6 +46,7 @@ class HouseProvider extends ChangeNotifier {
       );
 
   List<DeviceModel> get devices => _devices;
+  List<CameraModel> get cameras => _cameras;
   List<SecurityEventModel> get securityEvents => _securityEvents;
   List<DetectionEventModel> get detectionEvents => _detectionEvents;
   List<ResidentModel> get residents => _residents;
@@ -65,6 +68,7 @@ class HouseProvider extends ChangeNotifier {
     await Future.wait([
       fetchHouseData(),
       fetchDevices(),
+      fetchCameras(),
       fetchSecurityStatus(),
       fetchDetectionEvents(),
       fetchResidents(),
@@ -430,6 +434,66 @@ class HouseProvider extends ChangeNotifier {
     final res = await _apiService.deleteResident(residentId);
     if (res['success'] == true) {
       await fetchResidents();
+      return true;
+    }
+    return false;
+  }
+
+  // --- Camera Operations ---
+  Future<void> fetchCameras() async {
+    try {
+      final res = await _apiService.getCameras();
+      if (res['success'] == true && res['data']?['cameras'] != null) {
+        final list = res['data']['cameras'] as List;
+        _cameras = list.map((c) => CameraModel.fromJson(c)).toList();
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<bool> addCamera({
+    required String name,
+    required String locationName,
+    required String streamUrl,
+    String? resolution,
+    String? roomId,
+  }) async {
+    final res = await _apiService.addCamera(
+      name: name,
+      locationName: locationName,
+      streamUrl: streamUrl,
+      resolution: resolution,
+      roomId: roomId,
+    );
+    if (res['success'] == true) {
+      await fetchCameras();
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> updateCamera(String id, Map<String, dynamic> data) async {
+    final res = await _apiService.updateCamera(id, data);
+    if (res['success'] == true) {
+      await fetchCameras();
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> toggleCameraStatus(String id, bool isActive) async {
+    final res = await _apiService.toggleCameraStatus(id, isActive);
+    if (res['success'] == true) {
+      await fetchCameras();
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> deleteCamera(String id) async {
+    final res = await _apiService.deleteCamera(id);
+    if (res['success'] == true) {
+      await fetchCameras();
       return true;
     }
     return false;

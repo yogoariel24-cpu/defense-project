@@ -34,9 +34,9 @@ class _DevicesTabState extends State<DevicesTab> {
   }
 
   void _showOrderHardwareDialog(BuildContext context) {
-    String selectedType = 'CAMERA';
-    double unitPrice = 49.99;
-    final nameCtrl = TextEditingController(text: 'Front Porch AI Camera');
+    String selectedType = 'ESP32';
+    double unitPrice = 35000.0;
+    final nameCtrl = TextEditingController(text: 'Main Entrance Door Controller');
     final locCtrl = TextEditingController(text: 'Front Entrance');
     String paymentMethod = 'MOBILE_MONEY';
     final refCtrl = TextEditingController();
@@ -70,54 +70,41 @@ class _DevicesTabState extends State<DevicesTab> {
                     const Text('1. Choose Device Type', style: TextStyle(color: AppTheme.textLight, fontSize: 13, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 8),
                     _buildCatalogCard(
-                      title: 'AI Security Camera (ESP32-CAM)',
-                      price: '\$49.99',
-                      icon: Icons.videocam_rounded,
+                      title: 'ESP32 Access Controller (RFID + Servo + LCD)',
+                      price: '35,000 FCFA',
+                      icon: Icons.lock_open_rounded,
                       color: AppTheme.accentCyan,
+                      isSelected: selectedType == 'ESP32',
+                      onTap: () => setModalState(() {
+                        selectedType = 'ESP32';
+                        unitPrice = 35000.0;
+                        nameCtrl.text = 'Main Entrance Door Controller';
+                      }),
+                    ),
+                    const SizedBox(height: 6),
+                    _buildCatalogCard(
+                      title: 'AI Security Camera (ESP32-CAM)',
+                      price: '30,000 FCFA',
+                      icon: Icons.videocam_rounded,
+                      color: AppTheme.accentBlue,
                       isSelected: selectedType == 'CAMERA',
                       onTap: () => setModalState(() {
                         selectedType = 'CAMERA';
-                        unitPrice = 49.99;
-                        nameCtrl.text = 'Perimeter Security Camera';
+                        unitPrice = 30000.0;
+                        nameCtrl.text = 'Front Door AI Camera';
                       }),
                     ),
                     const SizedBox(height: 6),
                     _buildCatalogCard(
-                      title: 'Smart Dimmer Light Bulb (PWM)',
-                      price: '\$19.99',
-                      icon: Icons.lightbulb_rounded,
-                      color: Colors.orangeAccent,
-                      isSelected: selectedType == 'SMART_LIGHT',
+                      title: 'Encrypted RFID Keycards (Pack of 2)',
+                      price: '10,000 FCFA',
+                      icon: Icons.credit_card_rounded,
+                      color: AppTheme.accentOrange,
+                      isSelected: selectedType == 'RFID_READER',
                       onTap: () => setModalState(() {
-                        selectedType = 'SMART_LIGHT';
-                        unitPrice = 19.99;
-                        nameCtrl.text = 'Living Room Smart Light';
-                      }),
-                    ),
-                    const SizedBox(height: 6),
-                    _buildCatalogCard(
-                      title: 'PIR Motion Detector Sensor',
-                      price: '\$24.99',
-                      icon: Icons.sensors_rounded,
-                      color: AppTheme.statusWarning,
-                      isSelected: selectedType == 'MOTION_SENSOR',
-                      onTap: () => setModalState(() {
-                        selectedType = 'MOTION_SENSOR';
-                        unitPrice = 24.99;
-                        nameCtrl.text = 'Front Yard Motion Sensor';
-                      }),
-                    ),
-                    const SizedBox(height: 6),
-                    _buildCatalogCard(
-                      title: 'Emergency Siren & Panic Hub',
-                      price: '\$39.99',
-                      icon: Icons.notifications_active_rounded,
-                      color: AppTheme.statusDanger,
-                      isSelected: selectedType == 'ALARM_HUB',
-                      onTap: () => setModalState(() {
-                        selectedType = 'ALARM_HUB';
-                        unitPrice = 39.99;
-                        nameCtrl.text = 'Emergency Siren Hub';
+                        selectedType = 'RFID_READER';
+                        unitPrice = 10000.0;
+                        nameCtrl.text = 'Dual RFID Access Cards';
                       }),
                     ),
                     const SizedBox(height: 16),
@@ -353,7 +340,7 @@ class _DevicesTabState extends State<DevicesTab> {
                         children: [
                           const Text('Total Amount Due:', style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w600)),
                           Text(
-                            '\$${unitPrice.toStringAsFixed(2)}',
+                            '${unitPrice.toInt()} FCFA',
                             style: const TextStyle(color: AppTheme.accentCyan, fontWeight: FontWeight.w900, fontSize: 18),
                           ),
                         ],
@@ -538,7 +525,7 @@ class _DevicesTabState extends State<DevicesTab> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(ord['device_name'] ?? 'Device', style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700, fontSize: 13)),
-                            Text('Ref: ${ord['payment_reference']} • Total: \$${ord['total_price']}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                            Text('Ref: ${ord['payment_reference']} • Total: ${ord['total_price']} FCFA', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                           ],
                         ),
                       ),

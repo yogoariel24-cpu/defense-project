@@ -32,6 +32,14 @@ const Camera = sequelize.define('cameras', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
+  room_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+  },
+  is_active: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+  },
   is_ai_enabled: {
     type: DataTypes.BOOLEAN,
     defaultValue: true,

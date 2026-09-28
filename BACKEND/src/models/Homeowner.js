@@ -42,7 +42,7 @@ const Homeowner = sequelize.define('homeowners', {
   },
   payment_amount: {
     type: DataTypes.DECIMAL(10, 2),
-    defaultValue: 49.99,
+    defaultValue: 25000.00,
   },
   payment_date: {
     type: DataTypes.DATE,

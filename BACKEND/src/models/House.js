@@ -32,18 +32,26 @@ const House = sequelize.define('houses', {
     allowNull: false,
     defaultValue: 'DISARMED',
   },
-  light_mode: {
-    type: DataTypes.ENUM('AUTO', 'MANUAL'),
+  access_control_mode: {
+    type: DataTypes.ENUM('NORMAL', 'STRICT_BIOMETRIC', 'LOCKDOWN'),
     allowNull: false,
-    defaultValue: 'AUTO',
+    defaultValue: 'NORMAL',
+  },
+  require_face_verification: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
+  door_open_duration_seconds: {
+    type: DataTypes.INTEGER,
+    defaultValue: 5,
+  },
+  light_mode: {
+    type: DataTypes.STRING,
+    allowNull: true,
   },
   global_brightness: {
     type: DataTypes.INTEGER,
-    defaultValue: 75,
-    validate: {
-      min: 0,
-      max: 100,
-    },
+    allowNull: true,
   },
   emergency_contact_police: {
     type: DataTypes.STRING,

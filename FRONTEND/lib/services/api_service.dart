@@ -865,4 +865,94 @@ class ApiService {
       return {'success': false, 'message': 'Failed to load device orders'};
     }
   }
+
+  // --- Camera Management Endpoints ---
+  Future<Map<String, dynamic>> getCameras() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/cameras'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to load cameras'};
+    }
+  }
+
+  Future<Map<String, dynamic>> addCamera({
+    required String name,
+    required String locationName,
+    required String streamUrl,
+    String? resolution,
+    String? roomId,
+    String? deviceIdentifier,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/cameras'),
+        headers: _headers,
+        body: jsonEncode({
+          'name': name,
+          'location_name': locationName,
+          'stream_url': streamUrl,
+          if (resolution != null) 'resolution': resolution,
+          if (roomId != null) 'room_id': roomId,
+          if (deviceIdentifier != null) 'device_identifier': deviceIdentifier,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to add camera'};
+    }
+  }
+
+  Future<Map<String, dynamic>> updateCamera(String id, Map<String, dynamic> data) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/cameras/$id'),
+        headers: _headers,
+        body: jsonEncode(data),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to update camera'};
+    }
+  }
+
+  Future<Map<String, dynamic>> toggleCameraStatus(String id, bool isActive) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/cameras/$id/status'),
+        headers: _headers,
+        body: jsonEncode({'is_active': isActive}),
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to update camera status'};
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteCamera(String id) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/cameras/$id'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 8));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to delete camera'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getCameraStatus(String id) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/cameras/$id/status'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 6));
+      return jsonDecode(response.body);
+    } catch (e) {
+      return {'success': false, 'message': 'Failed to fetch camera status'};
+    }
+  }
 }

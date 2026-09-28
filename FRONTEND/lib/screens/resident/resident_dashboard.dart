@@ -6,7 +6,6 @@ import '../../theme/app_theme.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/stat_badge.dart';
 import '../../widgets/emergency_dialog.dart';
-import '../../widgets/custom_slider.dart';
 import 'package:intl/intl.dart';
 
 class ResidentDashboard extends StatefulWidget {
@@ -38,13 +37,13 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
     }
     final permissions = user.permissions ?? {};
     final canViewCameras = permissions['can_view_cameras'] == true;
-    final canControlLights = permissions['can_control_lights'] ?? true;
-    final canArmSecurity = permissions['can_arm_security'] == true;
 
     return Consumer<HouseProvider>(
       builder: (ctx, houseProvider, _) {
           final house = houseProvider.house;
           final events = houseProvider.securityEvents;
+          final rooms = houseProvider.rooms;
+          final myCards = houseProvider.rfidCards.where((c) => c.residentName.toLowerCase().contains(user.firstName.toLowerCase()) || c.residentId == user.id).toList();
           final snapshotEvents = events.where((e) => e.imageUrl != null && e.imageUrl!.isNotEmpty).toList();
 
           return Scaffold(
@@ -69,7 +68,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(user.fullName, style: const TextStyle(color: AppTheme.textLight, fontSize: 15, fontWeight: FontWeight.w700)),
-                  Text('Resident • ${user.houseId}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                  Text('Resident • ${user.houseId ?? 'Vigilis Secure'}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                 ],
               ),
               actions: [
@@ -132,13 +131,13 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('House Status', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800)),
+                            const Text('Access & Perimeter Status', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800)),
                             const SizedBox(height: 14),
                             Row(
                               children: [
                                 Expanded(
                                   child: _statusTile(
-                                    'Security',
+                                    'Perimeter',
                                     house.securityStatus.replaceAll('_', ' '),
                                     Icons.shield_rounded,
                                     house.isArmed ? AppTheme.accentCyan : AppTheme.statusSafe,
@@ -147,10 +146,10 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: _statusTile(
-                                    'Lighting',
-                                    '${house.globalBrightness}% • ${house.lightMode}',
-                                    Icons.lightbulb_rounded,
-                                    AppTheme.accentCyan,
+                                    'Access Controller',
+                                    'ONLINE • ACTIVE',
+                                    Icons.lock_outline_rounded,
+                                    AppTheme.statusSafe,
                                   ),
                                 ),
                               ],
@@ -205,70 +204,146 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                   ),
                 ),
 
-                // 1. Lighting Tab
+                // 1. Access & Keycards Tab
                 SingleChildScrollView(
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (!canControlLights)
-                        const GlassCard(
-                          child: Padding(
-                            padding: EdgeInsets.all(24),
-                            child: Center(
-                              child: Column(
-                                children: [
-                                  Icon(Icons.lock_outline_rounded, color: AppTheme.statusWarning, size: 36),
-                                  SizedBox(height: 10),
-                                  Text('Lighting Control Restricted', style: TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700)),
-                                  SizedBox(height: 4),
-                                  Text('The homeowner has disabled smart lighting controls for your resident profile.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12), textAlign: TextAlign.center),
-                                ],
-                              ),
+                      // Active RFID Cards Card
+                      GlassCard(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.credit_card_rounded, color: AppTheme.accentCyan, size: 22),
+                                const SizedBox(width: 10),
+                                const Text('My Registered RFID Cards', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800)),
+                              ],
                             ),
-                          ),
-                        )
-                      else
-                        GlassCard(
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Lighting Control', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800)),
-                              const SizedBox(height: 16),
-                              CustomBrightnessSlider(
-                                value: house.globalBrightness,
-                                onChanged: (val) => houseProvider.setBrightness(val.round()),
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      icon: const Icon(Icons.auto_mode_rounded, size: 16),
-                                      label: const Text('Auto (LDR)'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: house.lightMode == 'AUTO' ? AppTheme.accentBlue : AppTheme.primarySurface,
+                            const SizedBox(height: 12),
+                            if (myCards.isEmpty)
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primarySurface,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.info_outline_rounded, color: AppTheme.textMuted, size: 20),
+                                    SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        'No access cards specifically labeled for your profile. Contact the homeowner to assign an RFID keycard.',
+                                        style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
                                       ),
-                                      onPressed: () => houseProvider.setLightMode('AUTO'),
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      icon: const Icon(Icons.tune_rounded, size: 16),
-                                      label: const Text('Manual'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: house.lightMode == 'MANUAL' ? AppTheme.accentBlue : AppTheme.primarySurface,
+                                  ],
+                                ),
+                              )
+                            else
+                              ...myCards.map((card) => Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primarySurface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: AppTheme.accentCyan.withOpacity(0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.nfc_rounded, color: AppTheme.accentCyan, size: 22),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(card.label, style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700, fontSize: 14)),
+                                          Text('UID: ${card.cardUid}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                                        ],
                                       ),
-                                      onPressed: () => houseProvider.setLightMode('MANUAL'),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                                    StatBadge(
+                                      label: card.status,
+                                      color: card.isActive ? AppTheme.statusSafe : AppTheme.statusDanger,
+                                    ),
+                                  ],
+                                ),
+                              )),
+                          ],
                         ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Room Permissions Card
+                      GlassCard(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.meeting_room_rounded, color: AppTheme.accentBlue, size: 22),
+                                const SizedBox(width: 10),
+                                const Text('Room Access Permissions', style: TextStyle(color: AppTheme.textLight, fontSize: 16, fontWeight: FontWeight.w800)),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            if (rooms.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Center(
+                                  child: Text('No rooms configured in this house.', style: TextStyle(color: AppTheme.textMuted)),
+                                ),
+                              )
+                            else
+                              ...rooms.map((room) {
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primarySurface,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.white.withOpacity(0.06)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: (room.isRestricted ? AppTheme.statusWarning : AppTheme.statusSafe).withOpacity(0.12),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          room.isRestricted ? Icons.lock_rounded : Icons.door_front_door_rounded,
+                                          color: room.isRestricted ? AppTheme.statusWarning : AppTheme.statusSafe,
+                                          size: 18,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(room.name, style: const TextStyle(color: AppTheme.textLight, fontWeight: FontWeight.w700, fontSize: 13)),
+                                            Text(room.roomType, style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                                          ],
+                                        ),
+                                      ),
+                                      StatBadge(
+                                        label: room.isRestricted ? 'Restricted' : 'Permitted',
+                                        color: room.isRestricted ? AppTheme.statusWarning : AppTheme.statusSafe,
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -398,7 +473,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                 onTap: (i) => setState(() => _selectedIndex = i),
                 items: const [
                   BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
-                  BottomNavigationBarItem(icon: Icon(Icons.lightbulb_rounded), label: 'Lighting'),
+                  BottomNavigationBarItem(icon: Icon(Icons.vpn_key_rounded), label: 'My Access'),
                   BottomNavigationBarItem(icon: Icon(Icons.security_rounded), label: 'Security & Images'),
                 ],
               ),
@@ -429,3 +504,4 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
     );
   }
 }
+

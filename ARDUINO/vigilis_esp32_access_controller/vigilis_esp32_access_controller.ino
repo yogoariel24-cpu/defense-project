@@ -1,32 +1,49 @@
 /**
  * ============================================================================
  * VIGILIS INTELLIGENT HOME ACCESS CONTROL & SECURITY SYSTEM
- * FIRMWARE: ESP32 PHYSICAL ACCESS CONTROLLER
+ * FIRMWARE: MAIN ESP32 ACCESS CONTROLLER
  * ============================================================================
  * 
- * Hardware Prototype Configuration:
- *   - 1 x ESP32
+ * Target Board: ESP32 Dev Module (WROOM / NodeMCU-32S)
+ * Hardware Components:
  *   - 1 x RC522 RFID Reader
- *   - 2 x RFID Cards (Database configured)
- *   - 1 x SG90 Servo Motor (Cardboard Door Actuator)
+ *   - 1 x SG90 Micro Servo Motor (Door Actuator)
  *   - 1 x 16x2 I2C LCD Display (0x27)
- *   - 1 x Buzzer
- *   - 1 x Breadboard & Cardboard Door
+ *   - 1 x Active/Passive Buzzer
+ *   - 1 x Breadboard & Cardboard Door Model
  * 
- * Pinout Reference (Section 16):
- *   - RC522 SDA/SS -> GPIO 5
- *   - RC522 SCK    -> GPIO 18
- *   - RC522 MISO   -> GPIO 19
- *   - RC522 MOSI   -> GPIO 23
- *   - RC522 RST    -> GPIO 27
- *   - RC522 3.3V   -> 3.3V
- *   - RC522 GND    -> GND
+ * Hardware Pinout Configuration (Section 16):
+ *   -------------------------------------------------------------------------
+ *   RC522 RFID:
+ *     - SDA / SS : GPIO 5
+ *     - SCK      : GPIO 18
+ *     - MISO     : GPIO 19
+ *     - MOSI     : GPIO 23
+ *     - RST      : GPIO 27
+ *     - 3.3V     : 3.3V (Do NOT connect to 5V!)
+ *     - GND      : GND
  * 
- *   - LCD SDA      -> GPIO 21
- *   - LCD SCL      -> GPIO 22
+ *   16x2 I2C LCD:
+ *     - SDA      : GPIO 21
+ *     - SCL      : GPIO 22
+ *     - VCC      : 5V (or 3.3V depending on backpack)
+ *     - GND      : GND
  * 
- *   - SG90 Signal  -> GPIO 13 (External 5V supply, common GND)
- *   - Buzzer       -> GPIO 25
+ *   SG90 Servo Motor:
+ *     - Signal   : GPIO 13
+ *     - VCC      : External 5V Power Supply
+ *     - GND      : Common GND (tied to ESP32 GND)
+ * 
+ *   Buzzer:
+ *     - Signal   : GPIO 25
+ *     - GND      : GND
+ *   -------------------------------------------------------------------------
+ * 
+ * Architectural Rule:
+ *   The ESP32 does NOT make arbitrary local access decisions.
+ *   All RFID card scans are transmitted to the Node.js backend.
+ *   The backend determines validity, room permissions, and facial requirements.
+ *   FAIL-CLOSED: If backend/Wi-Fi is unreachable, door remains firmly CLOSED.
  * ============================================================================
  */
 
@@ -41,13 +58,15 @@
 #include <Preferences.h>
 #include <ArduinoJson.h>
 
-// Configurable Servo Angles and Timing
-const int SERVO_CLOSED_ANGLE      = 0;
-const int SERVO_OPEN_ANGLE        = 90;
-const unsigned long DOOR_OPEN_DURATION = 5000; // 5000 ms
-const int BUZZER_DURATION_MS      = 400;
+// ============================================================================
+// CONFIGURABLE SYSTEM PARAMETERS (Section 17 & 19)
+// ============================================================================
+const int SERVO_CLOSED_ANGLE      = 0;     // Calibrated closed door angle (degrees)
+const int SERVO_OPEN_ANGLE        = 90;    // Calibrated open door angle (degrees)
+const unsigned long DOOR_OPEN_DURATION = 5000; // Door remains open for 5 seconds
+const int BUZZER_DURATION_MS      = 400;   // Short buzzer pulse on unauthorized access
 
-// Pin Definitions
+// PIN DEFINITIONS
 #define RFID_SS_PIN    5
 #define RFID_RST_PIN   27
 #define LCD_SDA_PIN    21
@@ -56,23 +75,31 @@ const int BUZZER_DURATION_MS      = 400;
 #define BUZZER_PIN     25
 
 #define DEVICE_IDENTIFIER "ESP32_ACCESS_DOOR_01"
+#define DEFAULT_ROOM_ID   ""               // Optional room binding
 
+// ============================================================================
+// PERIPHERAL INSTANCES
+// ============================================================================
 MFRC522 rfid(RFID_SS_PIN, RFID_RST_PIN);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 Servo doorServo;
 Preferences prefs;
 WebServer server(80);
 
+// Wi-Fi & Backend Credentials
 String wifiSsid       = "Vigilis-Secure-WiFi";
 String wifiPassword   = "VigilisPassword";
 String backendUrl     = "https://defense-project-production.up.railway.app/api";
 
+// System State
 bool isDoorOpen = false;
 unsigned long doorOpenedTime = 0;
 unsigned long lastHeartbeatTime = 0;
-const unsigned long HEARTBEAT_INTERVAL = 30000;
+const unsigned long HEARTBEAT_INTERVAL = 30000; // 30 seconds
 
-// LCD Displays (Section 18)
+// ============================================================================
+// LCD HELPER FUNCTIONS (Exact messages matching Section 18)
+// ============================================================================
 void displayLcdIdle() {
   lcd.clear();
   lcd.setCursor(4, 0);
@@ -127,6 +154,9 @@ void displayLcdVerifyingFace() {
   lcd.print("Look at camera..");
 }
 
+// ============================================================================
+// BUZZER & SERVO HARDWARE CONTROLLERS
+// ============================================================================
 void triggerBuzzerDenied() {
   digitalWrite(BUZZER_PIN, HIGH);
   delay(BUZZER_DURATION_MS);
@@ -148,8 +178,12 @@ void closeDoor() {
   displayLcdIdle();
 }
 
+// ============================================================================
+// BACKEND AUTHORIZATION WORKFLOW (Section 8 & 9)
+// ============================================================================
 void verifyCardWithBackend(String cardUid) {
   if (WiFi.status() != WL_CONNECTED) {
+    // FAIL-CLOSED: Wi-Fi offline -> Door stays closed
     Serial.println(F("❌ [Offline] Wi-Fi disconnected. Access denied (Fail-Closed)."));
     displayLcdError();
     triggerBuzzerDenied();
@@ -164,43 +198,74 @@ void verifyCardWithBackend(String cardUid) {
   http.begin(endpoint);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("x-device-key", "vigilis_iot_secret_key_2026");
-  http.setTimeout(8000);
+  http.setTimeout(8000); // 8 second timeout
 
+  // Build JSON Request Payload
   StaticJsonDocument<256> doc;
   doc["cardUid"] = cardUid;
   doc["deviceId"] = DEVICE_IDENTIFIER;
+  doc["roomId"] = DEFAULT_ROOM_ID;
 
   String requestBody;
   serializeJson(doc, requestBody);
+
+  Serial.print(F("📡 Sending Access Request to Backend: "));
+  Serial.println(endpoint);
+  Serial.println(requestBody);
 
   int httpCode = http.POST(requestBody);
 
   if (httpCode > 0) {
     String responseString = http.getString();
+    Serial.print(F("📥 Backend Response [HTTP "));
+    Serial.print(httpCode);
+    Serial.println(F("]: ") + responseString);
+
     StaticJsonDocument<512> resDoc;
-    deserializeJson(resDoc, responseString);
+    DeserializationError err = deserializeJson(resDoc, responseString);
+
+    if (err) {
+      Serial.println(F("❌ JSON parse error. Fail closed."));
+      displayLcdError();
+      triggerBuzzerDenied();
+      delay(2000);
+      displayLcdIdle();
+      http.end();
+      return;
+    }
 
     bool authorized = resDoc["authorized"] | false;
     bool granted = resDoc["granted"] | false;
     bool requiresFace = resDoc["requiresFaceVerification"] | false;
 
+    // STEP 5: Biometric Verification Required
     if (authorized && requiresFace) {
+      Serial.println(F("📸 RFID Authorized! Camera facial verification required."));
       displayLcdVerifyingFace();
+      // The ESP32-CAM and Python AI verify the face. Once finalized, backend instructs unlock.
       delay(2500);
       return;
     }
 
+    // STEP 6: Final Decision
     if (authorized && granted) {
+      // ACCESS GRANTED
+      Serial.println(F("✅ Access Granted! Activating SG90 Servo motor."));
       displayLcdAuthorized();
       delay(1200);
       openDoor();
     } else {
+      // ACCESS DENIED (FAIL-CLOSED)
+      Serial.println(F("⛔ Access Denied by Backend Authority."));
       displayLcdUnauthorized();
       triggerBuzzerDenied();
       delay(2000);
       displayLcdIdle();
     }
   } else {
+    // Backend unreachable -> FAIL-CLOSED
+    Serial.print(F("❌ HTTP Connection Failed: "));
+    Serial.println(http.errorToString(httpCode).c_str());
     displayLcdError();
     triggerBuzzerDenied();
     delay(2000);
@@ -210,8 +275,12 @@ void verifyCardWithBackend(String cardUid) {
   http.end();
 }
 
+// ============================================================================
+// PERIODIC HEARTBEAT DIAGNOSTIC
+// ============================================================================
 void sendHeartbeat() {
   if (WiFi.status() != WL_CONNECTED) return;
+
   HTTPClient http;
   http.begin(backendUrl + "/iot/heartbeat");
   http.addHeader("Content-Type", "application/json");
@@ -220,6 +289,7 @@ void sendHeartbeat() {
   doc["device_identifier"] = DEVICE_IDENTIFIER;
   doc["status"] = "ONLINE";
   doc["ip_address"] = WiFi.localIP().toString();
+  doc["firmware_version"] = "v2.0-access-controller";
 
   String payload;
   serializeJson(doc, payload);
@@ -227,11 +297,17 @@ void sendHeartbeat() {
   http.end();
 }
 
+// ============================================================================
+// WIFI CONFIGURATION CAPTIVE PORTAL (Section 30)
+// ============================================================================
 void setupCaptivePortal() {
   WiFi.mode(WIFI_AP);
   WiFi.softAP("Vigilis-Access-AP", "12345678");
 
   IPAddress apIP = WiFi.softAPIP();
+  Serial.print(F("🌐 Captive Portal Active at: http://"));
+  Serial.println(apIP);
+
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("WiFi Config Mode");
@@ -276,24 +352,45 @@ void setupCaptivePortal() {
   server.begin();
 }
 
+// ============================================================================
+// SYSTEM SETUP & INITIALIZATION
+// ============================================================================
 void setup() {
   Serial.begin(115200);
   delay(500);
+  Serial.println(F("\n=============================================="));
+  Serial.println(F("  VIGILIS ACCESS CONTROLLER INITIALIZING...  "));
+  Serial.println(F("=============================================="));
 
+  // 1. Hardware Pin Configurations
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
 
+  // 2. Servo Setup
   doorServo.attach(SERVO_PIN);
-  doorServo.write(SERVO_CLOSED_ANGLE);
+  doorServo.write(SERVO_CLOSED_ANGLE); // Fail-Closed starting state
 
+  // 3. I2C LCD Initialization
   Wire.begin(LCD_SDA_PIN, LCD_SCL_PIN);
   lcd.init();
   lcd.backlight();
-  displayLcdIdle();
+  lcd.clear();
+  lcd.setCursor(4, 0);
+  lcd.print("VIGILIS");
+  lcd.setCursor(2, 1);
+  lcd.print("Initializing");
 
+  // 4. SPI & RC522 RFID Reader Initialization
   SPI.begin();
   rfid.PCD_Init();
+  delay(100);
+  if (rfid.PCD_DumpVersionToSerial()) {
+    Serial.println(F("✅ RC522 RFID Reader detected and initialized."));
+  } else {
+    Serial.println(F("⚠️ RC522 not responding. Check wiring."));
+  }
 
+  // 5. Load Stored Credentials
   prefs.begin("vigilis", true);
   String savedSsid = prefs.getString("ssid", "");
   String savedPass = prefs.getString("pass", "");
@@ -308,40 +405,61 @@ void setup() {
     backendUrl = savedBackend;
   }
 
+  // 6. Connect to Wi-Fi
+  Serial.print(F("Connecting to Wi-Fi SSID: "));
+  Serial.println(wifiSsid);
   WiFi.mode(WIFI_STA);
   WiFi.begin(wifiSsid.c_str(), wifiPassword.c_str());
 
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 15) {
     delay(500);
+    Serial.print(".");
     attempts++;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
+    Serial.println(F("\n✅ Wi-Fi Connected!"));
+    Serial.print(F("IP Address: "));
+    Serial.println(WiFi.localIP());
     displayLcdIdle();
   } else {
+    Serial.println(F("\n⚠️ Wi-Fi connection timed out. Starting Setup AP..."));
     setupCaptivePortal();
   }
 }
 
+// ============================================================================
+// MAIN RUNTIME LOOP
+// ============================================================================
 void loop() {
+  // Handle AP configuration server if in AP mode
   if (WiFi.getMode() == WIFI_AP) {
     server.handleClient();
     return;
   }
 
+  // Auto-close door after configured duration (Section 17)
   if (isDoorOpen && (millis() - doorOpenedTime >= DOOR_OPEN_DURATION)) {
     closeDoor();
   }
 
+  // Periodic heartbeat
   if (millis() - lastHeartbeatTime >= HEARTBEAT_INTERVAL) {
     lastHeartbeatTime = millis();
     sendHeartbeat();
   }
 
-  if (!rfid.PICC_IsNewCardPresent()) return;
-  if (!rfid.PICC_ReadCardSerial()) return;
+  // Check for New RFID Card
+  if (!rfid.PICC_IsNewCardPresent()) {
+    return;
+  }
 
+  if (!rfid.PICC_ReadCardSerial()) {
+    return;
+  }
+
+  // Extract Card UID formatted in uppercase hex (e.g. "A1 B2 C3 D4")
   String cardUid = "";
   for (byte i = 0; i < rfid.uid.size; i++) {
     if (rfid.uid.uidByte[i] < 0x10) cardUid += "0";
@@ -350,8 +468,14 @@ void loop() {
   }
   cardUid.toUpperCase();
 
+  Serial.print(F("\n💳 RFID Card Scanned: ["));
+  Serial.print(cardUid);
+  Serial.println(F("]"));
+
+  // Halt PICC to stop reading repeatedly
   rfid.PICC_HaltA();
   rfid.PCD_StopCrypto1();
 
+  // Transmit UID to Node.js backend authority
   verifyCardWithBackend(cardUid);
 }

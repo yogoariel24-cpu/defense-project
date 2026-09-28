@@ -55,27 +55,13 @@ Device.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
 Device.hasOne(Camera, { foreignKey: 'device_id', as: 'camera', onDelete: 'CASCADE' });
 Camera.belongsTo(Device, { foreignKey: 'device_id', as: 'device' });
 
-Device.hasOne(MotionSensor, { foreignKey: 'device_id', as: 'motionSensor', onDelete: 'CASCADE' });
-MotionSensor.belongsTo(Device, { foreignKey: 'device_id', as: 'device' });
-
-Device.hasOne(LightSensor, { foreignKey: 'device_id', as: 'lightSensor', onDelete: 'CASCADE' });
-LightSensor.belongsTo(Device, { foreignKey: 'device_id', as: 'device' });
-
-Device.hasOne(SmartLight, { foreignKey: 'device_id', as: 'smartLight', onDelete: 'CASCADE' });
-SmartLight.belongsTo(Device, { foreignKey: 'device_id', as: 'device' });
-
 // House Sub-device Direct Access
 House.hasMany(Camera, { foreignKey: 'house_id', as: 'cameras', onDelete: 'CASCADE' });
 Camera.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
 
-House.hasMany(MotionSensor, { foreignKey: 'house_id', as: 'motionSensors', onDelete: 'CASCADE' });
-MotionSensor.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
-
-House.hasMany(LightSensor, { foreignKey: 'house_id', as: 'lightSensors', onDelete: 'CASCADE' });
-LightSensor.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
-
-House.hasMany(SmartLight, { foreignKey: 'house_id', as: 'smartLights', onDelete: 'CASCADE' });
-SmartLight.belongsTo(House, { foreignKey: 'house_id', as: 'house' });
+// Room & Camera Association
+Room.hasMany(Camera, { foreignKey: 'room_id', as: 'cameras', onDelete: 'SET NULL' });
+Camera.belongsTo(Room, { foreignKey: 'room_id', as: 'room' });
 
 // Security Events & AI Analysis
 House.hasMany(SecurityEvent, { foreignKey: 'house_id', as: 'securityEvents', onDelete: 'CASCADE' });

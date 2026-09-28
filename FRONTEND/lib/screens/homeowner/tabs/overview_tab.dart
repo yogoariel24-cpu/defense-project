@@ -160,7 +160,7 @@ class OverviewTab extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
-          // Quick Telemetry Overview Cards
+          // Access Control & Security Metric Cards (Section 23)
           Row(
             children: [
               Expanded(
@@ -170,14 +170,58 @@ class OverviewTab extends StatelessWidget {
                     children: [
                       const Row(
                         children: [
-                          Icon(Icons.lightbulb_outline_rounded, color: AppTheme.accentCyan, size: 18),
+                          Icon(Icons.credit_card_rounded, color: AppTheme.accentOrange, size: 18),
                           SizedBox(width: 6),
-                          Text('LIGHTING', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
+                          Text('ACCESS CARDS', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Text('${house.globalBrightness}%', style: const TextStyle(color: AppTheme.textLight, fontSize: 22, fontWeight: FontWeight.w800)),
-                      Text('Mode: ${house.lightMode}', style: const TextStyle(color: AppTheme.textDim, fontSize: 11)),
+                      Text('${houseProvider.rfidCards.where((c) => c.isActive).length} Active', style: const TextStyle(color: AppTheme.textLight, fontSize: 20, fontWeight: FontWeight.w800)),
+                      Text('${houseProvider.rfidCards.length} Total Cards', style: const TextStyle(color: AppTheme.textDim, fontSize: 11)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GlassCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.videocam_rounded, color: AppTheme.accentCyan, size: 18),
+                          SizedBox(width: 6),
+                          Text('AI CAMERAS', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text('${houseProvider.cameras.where((c) => c.isOnline).length} Streaming', style: const TextStyle(color: AppTheme.textLight, fontSize: 20, fontWeight: FontWeight.w800)),
+                      Text('${houseProvider.cameras.length} Provisioned', style: const TextStyle(color: AppTheme.textDim, fontSize: 11)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: GlassCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.meeting_room_rounded, color: AppTheme.accentCyan, size: 18),
+                          SizedBox(width: 6),
+                          Text('ROOMS', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text('${houseProvider.rooms.length} Rooms', style: const TextStyle(color: AppTheme.textLight, fontSize: 20, fontWeight: FontWeight.w800)),
+                      const Text('Secured Boundaries', style: TextStyle(color: AppTheme.textDim, fontSize: 11)),
                     ],
                   ),
                 ),
@@ -192,17 +236,84 @@ class OverviewTab extends StatelessWidget {
                         children: [
                           Icon(Icons.devices_rounded, color: AppTheme.statusSafe, size: 18),
                           SizedBox(width: 6),
-                          Text('DEVICES', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
+                          Text('HARDWARE', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Text('${houseProvider.devices.length} Online', style: const TextStyle(color: AppTheme.textLight, fontSize: 22, fontWeight: FontWeight.w800)),
-                      const Text('ESP32 Core Active', style: TextStyle(color: AppTheme.textDim, fontSize: 11)),
+                      Text('${houseProvider.devices.length} Online', style: const TextStyle(color: AppTheme.textLight, fontSize: 20, fontWeight: FontWeight.w800)),
+                      const Text('ESP32 Access Controller', style: TextStyle(color: AppTheme.textDim, fontSize: 11)),
                     ],
                   ),
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 20),
+
+          // Recent Access & Security Activity Stream
+          GlassCard(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Recent Access & Security Activity', style: TextStyle(color: AppTheme.textLight, fontSize: 14, fontWeight: FontWeight.bold)),
+                    Icon(Icons.history_rounded, color: AppTheme.accentCyan, size: 18),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (houseProvider.accessHistory.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 14),
+                    child: Center(
+                      child: Text('No access activity recorded yet.', style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+                    ),
+                  )
+                else
+                  ...houseProvider.accessHistory.take(4).map((log) {
+                    final isGranted = log.isGranted;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isGranted ? Icons.check_circle_outline_rounded : Icons.cancel_outlined,
+                            color: isGranted ? AppTheme.statusSafe : AppTheme.statusDanger,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  log.residentName ?? 'Unregistered RFID / Unknown Face',
+                                  style: const TextStyle(color: AppTheme.textLight, fontSize: 12, fontWeight: FontWeight.w600),
+                                ),
+                                Text(
+                                  '${log.accessMethod} • ${log.roomName ?? 'Main Entrance'}',
+                                  style: const TextStyle(color: AppTheme.textDim, fontSize: 10),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            isGranted ? 'GRANTED' : 'DENIED',
+                            style: TextStyle(
+                              color: isGranted ? AppTheme.statusSafe : AppTheme.statusDanger,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+              ],
+            ),
           ),
         ],
       ),
