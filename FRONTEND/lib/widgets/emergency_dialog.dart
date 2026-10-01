@@ -51,7 +51,7 @@ class EmergencyDialog extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             const Text(
-              'Triggering this emergency alert will call local police (911), transmit your exact Google Maps GPS location, record in the activity log, and sound sirens for all house residents.',
+              'Triggering this emergency alert will immediately send an urgent priority email to the Police with your live Google Maps GPS location, initiate emergency phone calls, log to security audit, and alert all residents.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.4),
             ),
@@ -70,7 +70,9 @@ class EmergencyDialog extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: ElevatedButton(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.send_rounded, size: 16),
+                    label: const Text('DISPATCH POLICE'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.statusDanger,
                       foregroundColor: Colors.white,
@@ -79,7 +81,6 @@ class EmergencyDialog extends StatelessWidget {
                       Navigator.pop(context, true);
                       onConfirm();
                     },
-                    child: const Text('CALL POLICE (911)'),
                   ),
                 ),
               ],

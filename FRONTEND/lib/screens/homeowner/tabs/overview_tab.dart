@@ -59,7 +59,7 @@ class OverviewTab extends StatelessWidget {
                         style: TextStyle(color: AppTheme.statusDanger, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5),
                       ),
                       Text(
-                        'Dispatch police & security with one tap',
+                        'Emails police live Google Maps location & calls dispatch',
                         style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
                       ),
                     ],

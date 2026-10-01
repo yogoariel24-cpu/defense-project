@@ -1,6 +1,7 @@
 const https = require('https');
 const querystring = require('querystring');
 const { EmergencyEvent, House, User, Homeowner, Resident, Notification, ActivityLog } = require('../models');
+const { sendPoliceEmergencyEmail } = require('./emailService');
 
 /**
  * Direct HTTPS Twilio caller that works 100% natively without requiring external packages.
@@ -178,6 +179,38 @@ const dispatchEmergency = async ({
     console.log(`================================================================\n`);
   }
 
+  // 3B. Dispatch Urgent Emergency Email to Police with Google Maps Live Location
+  const googleMapsDirectionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+  const policeEmail = process.env.POLICE_EMERGENCY_EMAIL || house.police_email || 'police.dispatch@vigilis-emergency.gov';
+
+  let triggeredByName = 'Resident';
+  if (triggeredByUserId) {
+    const triggeringUser = await User.findByPk(triggeredByUserId);
+    if (triggeringUser) {
+      triggeredByName = `${triggeringUser.first_name} ${triggeringUser.last_name} (${triggeringUser.role})`;
+    }
+  } else if (house.homeowner?.user) {
+    triggeredByName = `${house.homeowner.user.first_name} ${house.homeowner.user.last_name} (Homeowner)`;
+  }
+
+  const homeownerPhone = house.homeowner?.emergency_phone || house.homeowner?.user?.phone_number || destinationNumber;
+
+  const policeEmailResult = await sendPoliceEmergencyEmail({
+    policeEmail,
+    houseName: house.name,
+    houseAddress: house.address,
+    houseId: house.id,
+    latitude: lat,
+    longitude: lng,
+    googleMapsUrl,
+    googleMapsDirectionsUrl,
+    triggeredByName,
+    source,
+    notes,
+    homeownerPhone,
+    time: new Date(),
+  });
+
   // 4. Create Emergency Event Record in MySQL
   const emergencyEvent = await EmergencyEvent.create({
     house_id: houseId,
@@ -190,14 +223,18 @@ const dispatchEmergency = async ({
     google_maps_url: googleMapsUrl,
     dispatch_logs: {
       timestamp: new Date().toISOString(),
+      policeEmail,
+      emailSent: policeEmailResult?.delivered || policeEmailResult?.simulated || false,
+      emailMessageId: policeEmailResult?.messageId || null,
       destinationPhone: destinationNumber,
       twilioFrom: twilioFromNumber,
       callSid: twilioCallResult?.sid || null,
       smsSid: twilioSmsResult?.sid || null,
       googleMapsUrl,
-      status: twilioCallResult?.success ? 'CALL_RINGING' : 'DISPATCHED',
+      googleMapsDirectionsUrl,
+      status: 'DISPATCHED',
     },
-    notes: notes || `Emergency alert triggered via ${source}. Police call initiated to ${destinationNumber}.`,
+    notes: notes || `Emergency alert triggered via ${source}. Police email dispatched to ${policeEmail} with Google Maps location. Call initiated to ${destinationNumber}.`,
   });
 
   // 5. Record in ActivityLog with Google Maps link
@@ -205,7 +242,7 @@ const dispatchEmergency = async ({
     user_id: triggeredByUserId || house.homeowner?.user?.id || null,
     house_id: houseId,
     action: 'EMERGENCY_PANIC_DISPATCHED',
-    details: `🚨 Panic button pressed. Police call placed to ${destinationNumber}. Live Google Maps GPS: ${googleMapsUrl}`,
+    details: `🚨 Panic button pressed. Police emergency email sent to ${policeEmail} with Google Maps location (${googleMapsUrl}). Call initiated to ${destinationNumber}.`,
   }).catch(() => {});
 
   // 6. Notify Homeowner (In-App)

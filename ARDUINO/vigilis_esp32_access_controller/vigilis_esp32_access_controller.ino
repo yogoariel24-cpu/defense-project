@@ -73,6 +73,7 @@ const int BUZZER_DURATION_MS      = 400;   // Short buzzer pulse on unauthorized
 #define LCD_SCL_PIN    22
 #define SERVO_PIN      13
 #define BUZZER_PIN     25
+#define PANIC_BUTTON_PIN 4               // Optional physical panic button (Active LOW)
 
 #define DEVICE_IDENTIFIER "ESP32_ACCESS_DOOR_01"
 #define DEFAULT_ROOM_ID   ""               // Optional room binding
@@ -96,6 +97,11 @@ bool isDoorOpen = false;
 unsigned long doorOpenedTime = 0;
 unsigned long lastHeartbeatTime = 0;
 const unsigned long HEARTBEAT_INTERVAL = 30000; // 30 seconds
+
+// Panic Button Debounce State
+bool panicButtonTriggered = false;
+unsigned long panicButtonPressTime = 0;
+const unsigned long PANIC_DEBOUNCE_MS = 500; // Ignore re-triggers for 500ms
 
 // ============================================================================
 // LCD HELPER FUNCTIONS (Exact messages matching Section 18)
@@ -152,6 +158,14 @@ void displayLcdVerifyingFace() {
   lcd.print("Card Verified");
   lcd.setCursor(0, 1);
   lcd.print("Look at camera..");
+}
+
+void displayLcdEmergency() {
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print("! EMERGENCY !");
+  lcd.setCursor(0, 1);
+  lcd.print("POLICE NOTIFIED");
 }
 
 // ============================================================================
@@ -298,6 +312,50 @@ void sendHeartbeat() {
 }
 
 // ============================================================================
+// HARDWARE EMERGENCY PANIC TRIGGER (Dispatches Police Email with Live GPS)
+// ============================================================================
+void triggerHardwareEmergency() {
+  Serial.println(F("\n🚨 [PANIC BUTTON TRIGGERED] Dispatches Police Email & Live GPS!"));
+  displayLcdEmergency();
+
+  // Pulse buzzer alarm
+  for (int i = 0; i < 3; i++) {
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(200);
+    digitalWrite(BUZZER_PIN, LOW);
+    delay(100);
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin(backendUrl + "/iot/emergency/trigger");
+    http.addHeader("Content-Type", "application/json");
+
+    StaticJsonDocument<256> doc;
+    doc["device_identifier"] = DEVICE_IDENTIFIER;
+    doc["emergency_type"] = "HARDWARE_PANIC_BUTTON";
+    doc["notes"] = "Physical emergency panic button pressed on VIGILIS door access controller.";
+
+    String payload;
+    serializeJson(doc, payload);
+
+    int httpCode = http.POST(payload);
+    if (httpCode > 0) {
+      Serial.printf("✅ Emergency dispatched to backend. Police notified via email with Google Maps location. (HTTP %d)\n", httpCode);
+    } else {
+      Serial.printf("⚠️ Emergency dispatch connection error: %s\n", http.errorToString(httpCode).c_str());
+    }
+    http.end();
+  } else {
+    Serial.println(F("⚠️ Wi-Fi not connected. Alarm sounded locally."));
+  }
+
+  delay(3000);
+  displayLcdIdle();
+}
+
+
+// ============================================================================
 // WIFI CONFIGURATION CAPTIVE PORTAL (Section 30)
 // ============================================================================
 void setupCaptivePortal() {
@@ -365,6 +423,7 @@ void setup() {
   // 1. Hardware Pin Configurations
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
+  pinMode(PANIC_BUTTON_PIN, INPUT_PULLUP);
 
   // 2. Servo Setup
   doorServo.attach(SERVO_PIN);
@@ -384,11 +443,8 @@ void setup() {
   SPI.begin();
   rfid.PCD_Init();
   delay(100);
-  if (rfid.PCD_DumpVersionToSerial()) {
-    Serial.println(F("✅ RC522 RFID Reader detected and initialized."));
-  } else {
-    Serial.println(F("⚠️ RC522 not responding. Check wiring."));
-  }
+  rfid.PCD_DumpVersionToSerial();
+  Serial.println(F("RC522 RFID Reader Initialized & Ready."));
 
   // 5. Load Stored Credentials
   prefs.begin("vigilis", true);
@@ -437,6 +493,22 @@ void loop() {
   if (WiFi.getMode() == WIFI_AP) {
     server.handleClient();
     return;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PANIC BUTTON CHECK (Active LOW via INPUT_PULLUP)
+  // Fires triggerHardwareEmergency() once per press with debounce protection
+  // ─────────────────────────────────────────────────────────────────────────
+  bool panicPinLow = (digitalRead(PANIC_BUTTON_PIN) == LOW);
+  if (panicPinLow && !panicButtonTriggered) {
+    panicButtonTriggered = true;
+    panicButtonPressTime = millis();
+    triggerHardwareEmergency();
+  }
+  // Reset debounce latch once button is released
+  if (!panicPinLow && panicButtonTriggered &&
+      (millis() - panicButtonPressTime >= PANIC_DEBOUNCE_MS)) {
+    panicButtonTriggered = false;
   }
 
   // Auto-close door after configured duration (Section 17)

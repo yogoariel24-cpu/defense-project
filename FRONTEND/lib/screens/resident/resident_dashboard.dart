@@ -102,7 +102,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text('EMERGENCY PANIC', style: TextStyle(color: AppTheme.statusDanger, fontWeight: FontWeight.w900, fontSize: 14)),
-                                  Text('Alert police & house residents with live GPS', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                                  Text('Email police live Google Maps location & dispatch help', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
                                 ],
                               ),
                             ),
